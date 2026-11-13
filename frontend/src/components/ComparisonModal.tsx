@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   X,
   Scale,
@@ -13,46 +13,19 @@ import {
   ArrowRight,
   ShieldCheck,
 } from 'lucide-react';
-import type { ComparisonReport } from '../types/court';
+import type { ComparisonReport, Judgment } from '../types/court';
 
 interface ComparisonModalProps {
   caseId: string;
+  judgment: Judgment;
   onClose: () => void;
 }
 
-export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, onClose }) => {
+export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgment, onClose }) => {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ComparisonReport | null>(null);
-
-  useEffect(() => {
-    let isMounted = true;
-    const fetchExistingComparison = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(`/api/cases/${caseId}/comparison`);
-        if (response.ok) {
-          const data: ComparisonReport = await response.json();
-          if (isMounted) {
-            setReport(data);
-          }
-        }
-      } catch (err) {
-        // No existing comparison generated yet
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-    if (caseId) {
-      fetchExistingComparison();
-    }
-    return () => {
-      isMounted = false;
-    };
-  }, [caseId]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -71,6 +44,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, onClos
     setError(null);
 
     const formData = new FormData();
+    formData.append('ai_judgment_file', new Blob([JSON.stringify(judgment)], { type: 'application/json' }), 'ai_judgment.json');
     formData.append('real_judgment_file', file);
 
     try {

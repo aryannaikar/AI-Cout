@@ -267,9 +267,10 @@ export function App() {
       )}
 
       {/* Phase 5 Real Court Judgment Comparison Modal */}
-      {isComparisonModalOpen && (
+      {isComparisonModalOpen && judgment && (
         <ComparisonModal
           caseId={activeCaseId}
+          judgment={judgment}
           onClose={() => setIsComparisonModalOpen(false)}
         />
       )}

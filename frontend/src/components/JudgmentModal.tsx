@@ -460,6 +460,7 @@ PRONOUNCED IN OPEN COURT.
       {isComparisonOpen && (
         <ComparisonModal
           caseId={caseId}
+          judgment={judgment}
           onClose={() => setIsComparisonOpen(false)}
         />
       )}
