@@ -12,11 +12,20 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import date, datetime
 from typing import Any, Optional
 
 from app.models.case_models import StructuredCase
 
 logger = logging.getLogger(__name__)
+
+TRANSITION_DATE = date(2024, 7, 1)
+
+# Corpus short names expected for each framework. The Information Technology Act
+# remains applicable across the BNS transition and is therefore intentionally not
+# excluded by either set.
+HISTORICAL_ACT_FILTERS = ("IPC", "IEA", "CrPC", "IT_Act", "Constitution")
+MODERN_ACT_FILTERS = ("BNS", "BSA", "BNSS", "IT_Act", "Constitution")
 
 # Section correspondence maps based on Indian Law repeal & savings
 # (BNS s.358, BNSS s.531, BSA repeal clauses)
@@ -96,6 +105,10 @@ def detect_case_legal_regime(
 
     text_lower = text_corpus.lower()
 
+    # Prefer an explicit alleged-incident/FIR date over a year appearing in
+    # procedural history or a citation. A 2024 case needs day-level handling.
+    relevant_date = _extract_relevant_legal_date(text_corpus)
+
     # Check for historical years (e.g., 1900-2023 or 2024 prior to July)
     fir_year_match = re.search(r"(?:fir|crime|case|sessions case)\s*(?:no\.?)?\s*[:\-]?\s*\d+\s*/\s*(19\d\d|20[0-2]\d)", text_lower)
     historical_year_found = False
@@ -121,7 +134,14 @@ def detect_case_legal_regime(
     is_historical = False
     reasoning = ""
 
-    if charges_mention_ipc:
+    uncertain = False
+    if relevant_date is not None:
+        is_historical = relevant_date < TRANSITION_DATE
+        reasoning = (
+            f"Relevant alleged-offence/FIR date is {relevant_date.isoformat()}, "
+            f"which is {'before' if is_historical else 'on or after'} the July 1, 2024 transition."
+        )
+    elif charges_mention_ipc:
         is_historical = True
         reasoning = "Statutory charges explicitly framed under Indian Penal Code / historical legislation."
     elif historical_year_found:
@@ -134,9 +154,10 @@ def detect_case_legal_regime(
         is_historical = False
         reasoning = "Statutory charges framed under Bharatiya Nyaya Sanhita, 2023."
     else:
-        # Default fallback: check for date indicators
+        # Do not present a guessed contemporary regime as certain.
         is_historical = False
-        reasoning = "Contemporary case regime applied."
+        uncertain = True
+        reasoning = "No reliable alleged-offence or FIR date, or explicit statutory charge, was extracted."
 
     if is_historical:
         return {
@@ -149,6 +170,8 @@ def detect_case_legal_regime(
             "procedure_statute": "Code of Criminal Procedure, 1973",
             "procedure_short": "CrPC",
             "reasoning": reasoning,
+            "applicability_confidence": "uncertain" if uncertain else "high",
+            "allowed_act_filters": HISTORICAL_ACT_FILTERS,
         }
     else:
         return {
@@ -161,7 +184,33 @@ def detect_case_legal_regime(
             "procedure_statute": "Bharatiya Nagarik Suraksha Sanhita, 2023",
             "procedure_short": "BNSS",
             "reasoning": reasoning,
+            "applicability_confidence": "uncertain" if uncertain else "high",
+            "allowed_act_filters": MODERN_ACT_FILTERS,
         }
+
+
+def _extract_relevant_legal_date(text: str) -> Optional[date]:
+    """Return a date tied to the offence/incident/FIR, never a judgment date."""
+    labelled = re.compile(
+        r"(?:date\s+of\s+)?(?:occurrence|incident|offence|commission|fir|crime)\s*(?:date)?\s*[:\-]?\s*"
+        r"(\d{1,2}[./-]\d{1,2}[./-](?:19\d{2}|20\d{2})|(?:19\d{2}|20\d{2})[./-]\d{1,2}[./-]\d{1,2})",
+        re.IGNORECASE,
+    )
+    matches = labelled.findall(text)
+    for raw in matches:
+        parsed = _parse_indian_date(raw)
+        if parsed:
+            return parsed
+    return None
+
+
+def _parse_indian_date(raw: str) -> Optional[date]:
+    for pattern in ("%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%Y-%m-%d", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(raw, pattern).date()
+        except ValueError:
+            continue
+    return None
 
 
 def get_defense_legal_research_query(case: Optional[StructuredCase]) -> str:

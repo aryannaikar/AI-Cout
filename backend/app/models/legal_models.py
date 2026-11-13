@@ -23,6 +23,18 @@ class ApplicableProvision(BaseModel):
     relevance_reasoning: str = Field(
         description="Legal reasoning explaining why this provision applies to the specific issue."
     )
+    applicable_version: Optional[str] = Field(
+        default=None, description="The statutory framework selected for the case, such as IPC/IEA/CrPC or BNS/BSA/BNSS."
+    )
+    legal_ingredients: list[str] = Field(
+        default_factory=list, description="Elements, foundational requirements, exceptions, or proof rules stated in the retrieved text."
+    )
+    applicability_confidence: str = Field(
+        default="high", description="high, medium, or uncertain depending on date, statute, and source traceability."
+    )
+    applicability_uncertainty: Optional[str] = Field(
+        default=None, description="Why applicability could not be resolved from the packet or corpus."
+    )
 
 
 class LegalResearchResult(BaseModel):

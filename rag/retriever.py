@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 from rag.config import config
 from rag.embeddings import EmbeddingModel
@@ -86,6 +86,7 @@ class LegalRetriever:
         query: str,
         top_k: Optional[int] = None,
         act_filter: Optional[str] = None,
+        act_filters: Optional[Sequence[str]] = None,
     ) -> list[RetrievalResult]:
         """
         Retrieve the most relevant legal provisions for a given query.
@@ -94,6 +95,9 @@ class LegalRetriever:
             query: Natural language query (e.g. "What law applies to stolen property?").
             top_k: Number of results to return (overrides default).
             act_filter: Optional statute filter (e.g. "BNS", "BSA", "IT_Act", "Constitution").
+            act_filters: Optional set of permitted statutes. This is applied at
+                retrieval time, not after ranking, so incompatible statutes
+                cannot enter a historical case's research result.
 
         Returns:
             List of RetrievalResult objects sorted by descending relevance.
@@ -115,7 +119,9 @@ class LegalRetriever:
         # Use provided filter, or fall back to suggested act if any
         final_act_filter = act_filter or processed_query.suggested_act
         
-        if final_act_filter:
+        if act_filters:
+            where = {"short_name": {"$in": list(act_filters)}}
+        elif final_act_filter:
             where = {"short_name": final_act_filter}
 
         # Query ChromaDB

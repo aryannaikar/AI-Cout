@@ -760,7 +760,8 @@ def judge_node(state: CourtState) -> dict[str, Any]:
             evidence_package=judge_input.evidence_package,
             prosecution_legal_research=judge_input.prosecution_legal_research,
             defense_legal_research=judge_input.defense_legal_research,
-            web_research=judge_input.prosecution_web_research or judge_input.defense_web_research,
+            prosecution_web_research=judge_input.prosecution_web_research,
+            defense_web_research=judge_input.defense_web_research,
         )
 
 
