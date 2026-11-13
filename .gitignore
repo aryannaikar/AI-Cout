@@ -21,3 +21,7 @@ dist-ssr/
 # Temporary Uploads
 backend/data/cases/uploads/*
 !backend/data/cases/uploads/.gitkeep
+backend/data/cases/*
+!backend/data/cases/.gitkeep
+backend/backend/
+

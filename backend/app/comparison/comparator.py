@@ -201,15 +201,14 @@ class JudgmentComparator:
         ai_v = ai.verdict
         real_v = real.verdict
 
-        # Handle extraction failure on Real Court verdict
-        if real_v in (OperativeVerdict.EXTRACTION_ERROR, OperativeVerdict.UNKNOWN):
+        # Missing/extraction-failed outcome on either side cannot be scored.
+        if ai_v in (OperativeVerdict.EXTRACTION_ERROR, OperativeVerdict.UNKNOWN) or real_v in (OperativeVerdict.EXTRACTION_ERROR, OperativeVerdict.UNKNOWN):
             status: AlignmentStatus = "not_aligned"
             category_status = ComparisonCategoryStatus.EXTRACTION_ERROR.value
             score = 0.0
             explanation = (
-                f"Real Court operative verdict extraction failed or outcome is unrecognized ({real_v.value}). "
-                f"Source: '{real.verdict_raw or 'None'}'. "
-                f"Normalization note: {real.verdict_normalization_explanation or 'N/A'}"
+                f"Operative verdict extraction failed or outcome is unrecognized (AI: {ai_v.value}; Real: {real_v.value}). "
+                f"AI source: '{ai.verdict_raw or 'None'}'; real source: '{real.verdict_raw or 'None'}'."
             )
             return VerdictComparisonResult(
                 ai_verdict=ai_v.value,
@@ -304,32 +303,13 @@ class JudgmentComparator:
         # If real issues were empty from direct parsing, extract core points from real ratio/chains
         effective_real = real_issues[:]
         if not effective_real and real.reasoning.key_chains:
-            for chain in real.reasoning.key_chains:
-                if len(chain) > 20 and any(w in chain.lower() for w in ["burden", "presumption", "recovery", "stolen", "theft", "411", "379", "identification", "witness"]):
-                    effective_real.append(chain)
+            effective_real.extend(chain for chain in real.reasoning.key_chains if len(chain) > 20)
 
         real_full_text = (real.raw_text or "").lower()
 
         # Step 1: Detect blatantly unrelated or hallucinated issues introduced by AI first
         for a_iss in ai_issues:
             a_tokens = self._extract_concept_tokens(a_iss)
-            is_spurious_electronic = (
-                ("electron" in a_tokens or "bsa" in a_tokens or "63" in a_tokens)
-                and ("electronic" not in real_full_text and "cyber" not in real_full_text)
-            )
-            if is_spurious_electronic:
-                unrelated_ai.append(a_iss)
-                unrelated.append(f"Unrelated issue framed by AI: {a_iss}")
-                errors.append(
-                    ComparisonErrorDetail(
-                        type="unrelated_issue",
-                        severity="high",
-                        ai_claim=a_iss,
-                        real_court_position=NOT_ESTABLISHED_MSG,
-                        explanation="AI Court framed an issue regarding electronic evidence (e.g. BSA Section 63), which had no bearing on the actual prosecution record.",
-                    )
-                )
-
         # Step 2: Semantic concept matching between AI issues and Real issues
         used_ai_issues: set[str] = set()
 
@@ -338,38 +318,15 @@ class JudgmentComparator:
             match_found = False
 
             for a_iss in ai_issues:
-                if a_iss in unrelated_ai or a_iss in used_ai_issues:
+                if a_iss in used_ai_issues:
                     continue
 
                 a_tokens = self._extract_concept_tokens(a_iss)
                 overlap = r_tokens.intersection(a_tokens)
 
-                # Check substantive concept pairs
-                concept_match = False
-                # 1. Reverse burden / initial burden of proof
-                if ("burden" in r_tokens or "proof" in r_tokens) and ("burden" in a_tokens or "proof" in a_tokens):
-                    concept_match = True
-                # 2. Section 411 IPC conviction and Section 379 theft acquittal dependency
-                elif ("411" in r_tokens and "379" in r_tokens) and ("411" in a_tokens or "379" in a_tokens or "stolen" in a_tokens):
-                    concept_match = True
-                # 3. Recovery of cash (₹25,000 / I25,000) linking to stolen amount
-                elif ("25000" in r_tokens or "recov" in r_tokens) and ("25000" in a_tokens or ("recov" in a_tokens and "stolen" in a_tokens)):
-                    concept_match = True
-                # 4. Knowledge or reason to believe property was stolen
-                elif ("stolen" in r_tokens or "reason" in r_tokens) and ("stolen" in a_tokens and "reason" in a_tokens):
-                    concept_match = True
-                # 5. TIP / dock identification
-                elif ("identif" in r_tokens or "tip" in r_tokens) and ("identif" in a_tokens or "tip" in a_tokens):
-                    concept_match = True
-                # 6. Arms Act / firearm recovery
-                elif ("arms" in r_tokens or "firearm" in r_tokens) and ("arms" in a_tokens or "firearm" in a_tokens):
-                    concept_match = True
-                # 7. Independent public witness
-                elif ("witnes" in r_tokens and "independent" in r_tokens) and ("witnes" in a_tokens and "independent" in a_tokens):
-                    concept_match = True
-                # 8. Overlap >= 2 substantive non-stopword roots
-                elif len([tok for tok in overlap if len(tok) >= 4]) >= 2:
-                    concept_match = True
+                # General one-to-one concept overlap; no benchmark-specific
+                # sections, amounts, evidence types, or issue templates.
+                concept_match = len(overlap) >= (1 if min(len(r_tokens), len(a_tokens)) <= 2 else 2)
 
                 if concept_match:
                     matched.append({
@@ -387,7 +344,7 @@ class JudgmentComparator:
 
         # Step 3: Check any remaining unused AI issues for relevance to controversy
         for a_iss in ai_issues:
-            if a_iss not in used_ai_issues and a_iss not in unrelated_ai:
+            if a_iss not in used_ai_issues:
                 a_tokens = self._extract_concept_tokens(a_iss)
                 has_substantive_overlap = any(tok in real_full_text for tok in a_tokens if len(tok) >= 4)
                 if not has_substantive_overlap:
@@ -437,74 +394,80 @@ class JudgmentComparator:
         missing: List[str],
         unrelated: List[str],
     ) -> FactualComparisonResult:
-        real_text_lower = (real.raw_text or "").lower()
-        packet_lower = self.case_packet_context.lower()
-        combined_authoritative = f"{real_text_lower} {packet_lower}"
-
+        # Allegations and inferences remain visible, but factual precision and
+        # recall assess only material propositions asserted as facts.
+        ai_facts = [f for f in ai.material_facts if f.is_material and f.epistemic_type == EpistemicType.FACT]
+        real_facts = [f for f in real.material_facts if f.is_material and f.epistemic_type == EpistemicType.FACT]
+        epistemic_distinctions = [
+            {"statement": f.statement[:100], "classified_as": f.epistemic_type.value}
+            for f in ai.material_facts
+        ]
         correct_facts: List[str] = []
         incorrect_facts: List[str] = []
         unsupported_facts: List[str] = []
         invented_facts: List[str] = []
         omitted_material_facts: List[str] = []
-        epistemic_distinctions: List[Dict[str, str]] = []
 
-        for fact in ai.material_facts:
-            stmt = fact.statement
-            stmt_lower = stmt.lower()
-            epistemic_distinctions.append(
-                {"statement": stmt[:100], "classified_as": fact.epistemic_type.value}
+        if not real_facts:
+            explanation = "Factual accuracy is not assessable: the real judgment yielded no reliable material-fact inventory. No completeness credit was assumed."
+            return FactualComparisonResult(
+                correct_facts=[], incorrect_facts=[], unsupported_facts=[], invented_facts=[],
+                omitted_material_facts=[], epistemic_distinctions=epistemic_distinctions,
+                score=0.0, correctness_score=0.0, completeness_score=0.0,
+                precision=None, recall=None, assessed_ai_facts=len(ai_facts), assessed_real_facts=0,
+                explanation=explanation, ai_extracted_position=f"{len(ai_facts)} assessable factual claims",
+                real_extracted_position="No reliable material-fact inventory", status=ComparisonCategoryStatus.INSUFFICIENT_DATA.value,
+                is_assessable=False,
             )
 
-            content_words = [
-                w for w in re.findall(r"\b[a-z]{4,}\b", stmt_lower)
-                if w not in ["court", "present", "alleged", "prosecution", "accused", "state", "sessions"]
-            ]
+        # Greedy one-to-one semantic matching prevents one broad AI claim from
+        # earning recall credit for several separate source propositions.
+        candidate_pairs = []
+        for ai_idx, af in enumerate(ai_facts):
+            for real_idx, rf in enumerate(real_facts):
+                similarity = self._fact_similarity(af.statement, rf.statement)
+                if similarity >= 0.55:
+                    candidate_pairs.append((similarity, ai_idx, real_idx))
+        used_ai: set[int] = set()
+        used_real: set[int] = set()
+        for _, ai_idx, real_idx in sorted(candidate_pairs, reverse=True):
+            if ai_idx not in used_ai and real_idx not in used_real:
+                used_ai.add(ai_idx)
+                used_real.add(real_idx)
+                correct_facts.append(ai_facts[ai_idx].statement)
 
-            if fact.epistemic_type == EpistemicType.FACT:
-                matches = sum(1 for w in content_words if w in combined_authoritative)
-                if len(content_words) > 0 and matches == 0:
-                    invented_facts.append(stmt)
-                    unrelated.append(f"Invented fact: {stmt}")
-                    errors.append(
-                        ComparisonErrorDetail(
-                            type="hallucinated_fact",
-                            severity="high",
-                            ai_claim=stmt,
-                            real_court_position=NOT_ESTABLISHED_MSG,
-                            explanation="AI asserted a factual proposition that is unsupported and absent from the authoritative judgment.",
-                        )
-                    )
-                elif matches >= max(1, len(content_words) // 3):
-                    correct_facts.append(stmt)
-                else:
-                    unsupported_facts.append(stmt)
-            elif fact.epistemic_type == EpistemicType.INFERENCE:
-                # Valid judicial inference is not treated as an invented fact
-                correct_facts.append(stmt)
+        real_text = (real.raw_text or "").lower()
+        for idx, fact in enumerate(ai_facts):
+            if idx in used_ai:
+                continue
+            stmt = fact.statement
+            tokens = self._fact_tokens(stmt)
+            is_present = bool(tokens and any(token in real_text for token in tokens if len(token) >= 5))
+            if is_present:
+                unsupported_facts.append(stmt)
+                errors.append(ComparisonErrorDetail(
+                    type="unsupported_fact", severity="medium", ai_claim=stmt,
+                    real_court_position=NOT_ESTABLISHED_MSG,
+                    explanation="The source contains related terminology but does not substantiate this factual proposition.",
+                ))
             else:
-                correct_facts.append(stmt)
+                invented_facts.append(stmt)
+                unrelated.append(f"Invented fact: {stmt}")
+                errors.append(ComparisonErrorDetail(
+                    type="hallucinated_fact", severity="high", ai_claim=stmt,
+                    real_court_position=NOT_ESTABLISHED_MSG,
+                    explanation="No sufficiently similar material fact appears in the authoritative fact inventory.",
+                ))
+        for idx, fact in enumerate(real_facts):
+            if idx not in used_real:
+                omitted_material_facts.append(fact.statement)
+                missing.append(f"Omitted material fact: {fact.statement}")
 
-        # Check for covered vs omitted material facts from real judgment
-        covered_real_facts = 0
-        for rf in real.material_facts:
-            rf_words = [w for w in re.findall(r"\b[a-z]{4,}\b", rf.statement.lower()) if w not in ["court", "judgment"]]
-            if rf_words and any(w in (ai.raw_text or "").lower() for w in rf_words[:2]):
-                covered_real_facts += 1
-            else:
-                omitted_material_facts.append(rf.statement)
-                missing.append(f"Omitted material fact: {rf.statement}")
-
-        total_evaluated = len(ai.material_facts) or 1
-        base_correctness = (len(correct_facts) / total_evaluated) * 100.0
-        penalty = (len(invented_facts) * 20.0) + (len(unsupported_facts) * 5.0)
-        correctness_score = max(0.0, min(100.0, round(base_correctness - penalty, 2)))
-
-        if real.material_facts:
-            completeness_score = max(0.0, min(100.0, round((covered_real_facts / len(real.material_facts)) * 100.0, 2)))
-            score = max(0.0, min(100.0, round(0.70 * correctness_score + 0.30 * completeness_score, 2)))
-        else:
-            completeness_score = 100.0
-            score = correctness_score
+        precision_value = len(used_ai) / len(ai_facts) if ai_facts else 0.0
+        recall_value = len(used_real) / len(real_facts)
+        correctness_score = precision_value * 100.0
+        completeness_score = recall_value * 100.0
+        score = (2 * precision_value * recall_value / (precision_value + recall_value) * 100.0) if precision_value + recall_value else 0.0
 
         category_status = (
             ComparisonCategoryStatus.MATCH.value if score >= 85.0
@@ -512,9 +475,9 @@ class JudgmentComparator:
         )
 
         explanation = (
-            f"Factual analysis: {len(correct_facts)} facts verified (Correctness: {correctness_score:.1f}%), "
-            f"{len(invented_facts)} invented facts, {len(unsupported_facts)} unsupported facts. "
-            f"Factual completeness: {completeness_score:.1f}% ({len(omitted_material_facts)} omitted material facts)."
+            f"Factual precision: {correctness_score:.1f}% ({len(used_ai)}/{len(ai_facts)} AI factual claims matched); "
+            f"recall: {completeness_score:.1f}% ({len(used_real)}/{len(real_facts)} source facts covered); "
+            f"F1: {score:.1f}%. Invented: {len(invented_facts)}; unsupported: {len(unsupported_facts)}; omitted: {len(omitted_material_facts)}."
         )
 
         return FactualComparisonResult(
@@ -527,12 +490,37 @@ class JudgmentComparator:
             score=score,
             correctness_score=correctness_score,
             completeness_score=completeness_score,
+            precision=correctness_score,
+            recall=completeness_score,
+            assessed_ai_facts=len(ai_facts),
+            assessed_real_facts=len(real_facts),
             explanation=explanation,
             ai_extracted_position=f"{len(correct_facts)} verified facts",
             real_extracted_position=f"{len(real.material_facts)} authoritative propositions",
             status=category_status,
             is_assessable=True,
         )
+
+    @staticmethod
+    def _fact_tokens(text: str) -> set[str]:
+        stop = {"that", "this", "with", "from", "were", "was", "have", "been", "into", "under", "court", "judgment", "accused", "prosecution", "defence", "the", "and", "for"}
+        tokens = {t for t in re.findall(r"[a-z0-9]{3,}", text.lower()) if t not in stop}
+        normalized = set()
+        for token in tokens:
+            for suffix in ("ing", "ed", "es", "s"):
+                if len(token) > len(suffix) + 3 and token.endswith(suffix):
+                    token = token[:-len(suffix)]
+                    break
+            normalized.add(token)
+        return normalized
+
+    @classmethod
+    def _fact_similarity(cls, first: str, second: str) -> float:
+        a, b = cls._fact_tokens(first), cls._fact_tokens(second)
+        if not a or not b:
+            return 0.0
+        overlap = len(a & b)
+        return (2.0 * overlap) / (len(a) + len(b))
 
     @staticmethod
     def _extract_section_number(statute_text: str) -> str:
@@ -576,16 +564,6 @@ class JudgmentComparator:
         )
 
         # Map equivalent offences between IPC and BNS
-        statute_equivalents = {
-            "411": ["317", "stolen property"],
-            "379": ["303", "theft"],
-            "302": ["103", "murder"],
-            "201": ["238", "evidence disappearance", "causing disappearance"],
-            "317": ["411"],
-            "303": ["379"],
-            "103": ["302"],
-        }
-
         for a_c in ai_charges:
             a_stat = a_c.statute
             a_sec = self._extract_section_number(a_stat)
@@ -609,10 +587,8 @@ class JudgmentComparator:
                 r_stat = r_c.statute
                 r_sec = self._extract_section_number(r_stat)
 
-                if a_sec and r_sec and a_sec == r_sec:
-                    matched_real = r_c
-                    break
-                elif a_sec and r_sec and r_sec in statute_equivalents.get(a_sec, []):
+                same_accused = not (a_c.accused_name and r_c.accused_name) or self._same_person(a_c.accused_name, r_c.accused_name)
+                if same_accused and a_sec and r_sec and a_sec == r_sec:
                     matched_real = r_c
                     break
 
@@ -630,14 +606,16 @@ class JudgmentComparator:
                 )
                 if is_in_procedural_history:
                     # Distinguish co-accused / procedural charge from pure hallucination
-                    is_coaccused = "moulana" in real_full_text and any(s in a_stat for s in ["302", "201"])
+                    is_coaccused = any(
+                        a_c.accused_name and r_c.accused_name
+                        and not self._same_person(a_c.accused_name, r_c.accused_name)
+                        for r_c in real_charges
+                    )
                     procedural_or_coaccused.append(a_stat)
                     explanation = (
-                        f"Section {a_sec} was framed in the trial court proceedings against co-accused (Moulana) for murder/destruction of evidence. "
-                        f"It appears legitimately in the trial court procedural history (harmless context as case background), "
-                        f"but was not an active appellate charge against appellant Shabuddin. AI Court cited it without distinguishing accused applicability."
+                        f"Provision '{a_stat}' belongs to a different named accused in the extracted charge record, not the accused being evaluated."
                         if is_coaccused else
-                        f"Provision '{a_stat}' appeared in the trial court procedural history but was not the subject of the appellate ratio."
+                        f"Provision '{a_stat}' appears in the source text but is not matched to an active charge for the accused being evaluated."
                     )
                     incorrectly_introduced.append(a_stat)
                     errors.append(
@@ -697,9 +675,16 @@ class JudgmentComparator:
             explanation=explanation,
             ai_extracted_position="; ".join(c.statute for c in ai_charges),
             real_extracted_position="; ".join(c.statute for c in real_charges),
-            status=category_status,
-            is_assessable=True,
+            status=category_status if (ai_charges or real_charges) else ComparisonCategoryStatus.INSUFFICIENT_DATA.value,
+            is_assessable=bool(ai_charges or real_charges),
         )
+
+    @staticmethod
+    def _same_person(first: str, second: str) -> bool:
+        def normalized(value: str) -> str:
+            return " ".join(re.findall(r"[a-z]+", value.lower()))
+        a, b = normalized(first), normalized(second)
+        return bool(a and b and (a == b or a in b or b in a))
 
     # --------------------------------------------------------------------------
     # E. Witness Alignment (with Insufficient Data Handling)
@@ -824,17 +809,20 @@ class JudgmentComparator:
         real_ev = real.evidence_items
         real_text_lower = (real.raw_text or "").lower()
 
-        # If both judgments contain no extractable exhibit items
-        if not real_ev and not ai_ev:
+        # Without a source exhibit inventory, an empty/missing record is not
+        # evidence of perfect AI alignment and cannot support a numeric score.
+        if not real_ev:
             return EvidenceComparisonResult(
                 correctly_considered=[],
                 ignored_evidence=[],
                 misattributed_evidence=[],
+                misinterpreted_evidence=[],
                 invented_evidence=[],
                 improperly_proved_evidence=[],
-                score=100.0,
-                explanation="Evidence evaluation: Insufficient Data in source judgment (Ground Truth summary). Category marked Insufficient Data and excluded from scoring denominator.",
-                ai_extracted_position="No exhibit inventory extracted",
+                assessed_ai_evidence=len(ai_ev), assessed_real_evidence=0,
+                score=0.0,
+                explanation="Evidence alignment is not assessable: the source judgment yielded no reliable exhibit inventory. No default score was assigned.",
+                ai_extracted_position=f"{len(ai_ev)} AI evidence items; source inventory unavailable",
                 real_extracted_position="No exhibit-by-exhibit inventory present in summary",
                 status=ComparisonCategoryStatus.INSUFFICIENT_DATA.value,
                 is_assessable=False,
@@ -843,6 +831,7 @@ class JudgmentComparator:
         correctly_considered: List[str] = []
         ignored_evidence: List[str] = []
         misattributed_evidence: List[str] = []
+        misinterpreted_evidence: List[str] = []
         invented_evidence: List[str] = []
         improperly_proved: List[str] = []
 
@@ -866,13 +855,28 @@ class JudgmentComparator:
                     )
                 )
             else:
-                matched_real = any(
-                    r_e.exhibit_id.lower() in a_e.exhibit_id.lower()
-                    or any(k in desc_lower and k in r_e.description.lower() for k in ["recovery", "seizure", "pistol", "vehicle", "tip", "parade", "cash", "rupees"])
-                    for r_e in real_ev
-                )
-                if matched_real or any(k in real_text_lower for k in re.findall(r"\b[a-z]{4,}\b", desc_lower)[:2]):
-                    correctly_considered.append(a_e.exhibit_id)
+                def normalized_id(value: str) -> str:
+                    return re.sub(r"[^a-z0-9]", "", value.lower())
+                candidates = []
+                for r_e in real_ev:
+                    id_match = normalized_id(r_e.exhibit_id) == normalized_id(a_e.exhibit_id)
+                    description_similarity = self._fact_similarity(a_e.description, r_e.description)
+                    if id_match or description_similarity >= 0.55:
+                        candidates.append((1.0 if id_match else description_similarity, r_e))
+                matched_real = max(candidates, key=lambda item: item[0])[1] if candidates else None
+                if matched_real:
+                    polarity = self._evidence_assessment_polarity(a_e.judicial_assessment)
+                    real_polarity = self._evidence_assessment_polarity(matched_real.judicial_assessment)
+                    if polarity and real_polarity and polarity != real_polarity:
+                        detail = f"{a_e.exhibit_id}: AI '{a_e.judicial_assessment}' vs real '{matched_real.judicial_assessment}'"
+                        misinterpreted_evidence.append(detail)
+                        errors.append(ComparisonErrorDetail(
+                            type="misinterpreted_evidence", severity="high", ai_claim=detail,
+                            real_court_position=matched_real.judicial_assessment or NOT_ESTABLISHED_MSG,
+                            explanation="AI and real judgment assign opposing probative directions to the matched evidence item.",
+                        ))
+                    else:
+                        correctly_considered.append(a_e.exhibit_id)
                 else:
                     misattributed_evidence.append(a_e.exhibit_id)
 
@@ -902,8 +906,11 @@ class JudgmentComparator:
             correctly_considered=correctly_considered,
             ignored_evidence=ignored_evidence,
             misattributed_evidence=misattributed_evidence,
+            misinterpreted_evidence=misinterpreted_evidence,
             invented_evidence=invented_evidence,
             improperly_proved_evidence=improperly_proved,
+            assessed_ai_evidence=len(ai_ev),
+            assessed_real_evidence=len(real_ev),
             score=score,
             explanation=explanation,
             ai_extracted_position=f"{len(ai_ev)} evidence items",
@@ -911,6 +918,17 @@ class JudgmentComparator:
             status=category_status,
             is_assessable=bool(len(real_ev) > 0 or len(ai_ev) > 0),
         )
+
+    @staticmethod
+    def _evidence_assessment_polarity(text: Optional[str]) -> Optional[str]:
+        if not text:
+            return None
+        value = text.lower()
+        positive = bool(re.search(r"\b(reliable|credible|corroborat\w*|supports?|proved|admissible)\b", value))
+        negative = bool(re.search(r"\b(unreliable|not credible|doubtful|not proved|contradict\w*|inadmissible|unproved|excluded)\b", value))
+        if positive == negative:
+            return None
+        return "positive" if positive else "negative"
 
     # --------------------------------------------------------------------------
     # G. Legal Provision Alignment
@@ -961,20 +979,17 @@ class JudgmentComparator:
                         explanation=f"Provision '{ap}' is modern law (2023), inapplicable to the historical offence.",
                     )
                 )
-            # 2. Check if co-accused charge or procedural history (e.g. Section 302, 201 IPC)
-            elif any(s in ["302", "201"] for s in ap_secs) and ("moulana" in real_text_lower or "co-accused" in real_text_lower) and not any(s in real_substantive_secs for s in ap_secs):
+            # A citation found only in source history, and absent from the
+            # extracted governing provisions, remains procedural context.
+            elif any(s in real_text_lower for s in ap_sec_nums) and not any(s in real_substantive_secs for s in ap_sec_nums):
                 procedural_or_coaccused.append(ap)
                 errors.append(
                     ComparisonErrorDetail(
                         type="wrong_legal_provision",
                         severity="medium",
                         ai_claim=ap,
-                        real_court_position="Trial court procedural history (co-accused Moulana)",
-                        explanation=(
-                            f"Section {sec_disp} was framed in trial court against co-accused (Moulana) for murder/destruction of evidence. "
-                            f"It appears legitimately in the trial court procedural history (harmless context as case background), "
-                            f"but was not an appellate charge governing appellant Shabuddin. AI Court cited it without distinguishing accused applicability."
-                        ),
+                        real_court_position="Procedural or historical reference in source text, absent from extracted governing provisions",
+                        explanation=f"Citation '{ap}' appears in source text but is not identified as a governing provision for this comparison.",
                     )
                 )
             # 3. Check if matches substantive real provision
@@ -1062,208 +1077,79 @@ class JudgmentComparator:
         errors: List[ComparisonErrorDetail],
         missing: List[str],
     ) -> LegalReasoningComparisonResult:
-        """
-        Deep analysis of judicial ratio decidendi and chains of logical inference.
-        Evaluates whether AI Judgment captures the real court's actual central reasoning:
-        e.g., initial burden of proof, Section 114 presumption foundational facts,
-        cash lacking distinctive characteristics, Section 411 vs 379 theft failure.
-        Compares substantive judicial themes individually with explicit provenance and source evidence.
-        """
-        ai_ratio = (ai.reasoning.ratio_decidendi or "").lower()
-        real_ratio = (real.reasoning.ratio_decidendi or "").lower()
-        real_full = f"{(real.raw_text or '')} {real_ratio} {' '.join(i.statement for i in real.legal_issues)}".lower()
-        ai_full = f"{ai_ratio} {' '.join(ai.reasoning.key_chains)} {' '.join(i.statement for i in ai.legal_issues)} {(ai.raw_text or '')}".lower()
-        ai_issues_list = [i.statement for i in ai.legal_issues]
+        """Compare source-derived reasoning propositions without benchmark-specific templates."""
+        real_themes: List[str] = []
+        for issue in real.legal_issues:
+            proposition = " ".join(filter(None, [issue.statement, issue.finding, issue.reasoning_summary]))
+            if len(proposition) >= 25:
+                real_themes.append(proposition)
+        real_themes.extend(chain for chain in real.reasoning.key_chains if len(chain) >= 25)
+        if not real_themes:
+            real_themes.extend(
+                sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", real.reasoning.ratio_decidendi)
+                if len(sentence.strip()) >= 35
+            )
+        real_themes = list(dict.fromkeys(real_themes))
+
+        ai_propositions = list(ai.reasoning.key_chains)
+        ai_propositions.extend(
+            " ".join(filter(None, [issue.statement, issue.finding, issue.reasoning_summary]))
+            for issue in ai.legal_issues
+        )
+        ai_propositions.extend(
+            sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", ai.reasoning.ratio_decidendi)
+            if len(sentence.strip()) >= 25
+        )
 
         theme_evaluations: List[ReasoningThemeComparison] = []
+        matched_ai: set[int] = set()
+        for index, source_theme in enumerate(real_themes, 1):
+            source_tokens = self._extract_concept_tokens(source_theme)
+            best_index, best_similarity = None, 0.0
+            for ai_index, proposition in enumerate(ai_propositions):
+                if ai_index in matched_ai:
+                    continue
+                ai_tokens = self._extract_concept_tokens(proposition)
+                overlap = len(source_tokens & ai_tokens)
+                similarity = overlap / max(1, min(len(source_tokens), len(ai_tokens)))
+                if overlap >= 2 and similarity > best_similarity:
+                    best_index, best_similarity = ai_index, similarity
+            if best_index is None:
+                match_status = "MISMATCH"
+                ai_position = "No semantically similar AI reasoning proposition was identified."
+                missing.append(f"Core judicial reasoning omitted: {source_theme[:180]}")
+            else:
+                matched_ai.add(best_index)
+                match_status = "MATCH" if best_similarity >= 0.7 else "PARTIAL_MATCH"
+                ai_position = ai_propositions[best_index]
+            theme_evaluations.append(ReasoningThemeComparison(
+                theme_id=f"SOURCE-{index}", theme_name=f"Source proposition {index}",
+                real_court_position=source_theme, ai_position=ai_position,
+                match_status=match_status, source_evidence=source_theme,
+            ))
 
-        # 4 Authoritative Supreme Court themes for the controversy
-        theme_defs = [
-            {
-                "id": "THEME-1",
-                "name": "Initial Burden of Proof",
-                "real_keywords": ["burden of proof", "initial burden", "reverse burden", "burden on the appellant", "prosecution bore the burden"],
-                "real_position": "The prosecution bore the initial burden of proving guilt beyond reasonable doubt; the High Court erred by shifting a reverse burden onto the appellant and co-accused.",
-                "source_evidence": "Supreme Court Judgment § 2 (Issue I) & § 3: High Court judgment was unsustainable because it erroneously placed the burden on the appellant and co-accused, whereas prosecution bore the burden of proving its case beyond reasonable doubt.",
-                "eval_fn": lambda a_rat, a_full, a_iss: (
-                    ("MATCH", "AI Court correctly recognized that the initial burden rested upon the prosecution and identified the impermissible shifting of a reverse burden.")
-                    if ("reverse burden" in a_rat or ("burden" in a_rat and "prosecution" in a_rat))
-                    else (
-                        ("MISMATCH", "Framed in issue list ('Whether the prosecution discharged its initial burden of proof'), but omitted in ratio decidendi: AI Court found Issue 1 PROVED and granted acquittal on generic benefit of doubt without analyzing the High Court's reverse-burden error.")
-                        if ("burden" in a_full or any("burden" in iss.lower() for iss in a_iss))
-                        else ("MISMATCH", "AI Court omitted initial burden of proof analysis.")
-                    )
-                ),
-            },
-            {
-                "id": "THEME-2",
-                "name": "Section 114 Presumption and Foundational Facts",
-                "real_keywords": ["section 114", "presumption", "foundational facts", "foundational fact"],
-                "real_position": "Presumption under Section 114 of the Indian Evidence Act applies only after the prosecution proves foundational facts of theft and possession soon after the incident.",
-                "source_evidence": "Supreme Court Judgment § 3 (Core Reasoning): The presumption under Section 114 of the Indian Evidence Act could apply only after the prosecution established foundational facts of theft and possession soon after the incident.",
-                "eval_fn": lambda a_rat, a_full, a_iss: (
-                    ("MATCH", "AI Court correctly applied the Section 114 statutory presumption and foundational facts requirements.")
-                    if ("section 114" in a_rat and "foundational" in a_rat)
-                    else (
-                        ("PARTIAL_MATCH", "AI Court referenced Section 114 and foundational facts in submissions or issue analysis, but omitted it from ratio decidendi.")
-                        if ("section 114" in a_full and "foundational" in a_full)
-                        else ("MISMATCH", "Omitted by AI Court. No judicial analysis of Section 114 Evidence Act statutory presumption or the requirement to establish foundational facts.")
-                    )
-                ),
-            },
-            {
-                "id": "THEME-3",
-                "name": "Lack of Distinctive Characteristics Linking Recovered Cash (₹25,000) to Deceased",
-                "real_keywords": ["25,000", "25000", "recovered cash", "identifying characteristics", "distinctive", "identifiable", "currency"],
-                "real_position": "Mere recovery of ₹25,000 from the appellant did not prove it was stolen; the recovered cash had no special or distinct identifying characteristics linking it to the deceased.",
-                "source_evidence": "Supreme Court Judgment § 3 (Core Reasoning): The record did not establish the total amount of cash the deceased carried. Mere recovery of I25,000 from the appellant did not prove that the cash was stolen. The recovered cash had no special or distinct identifying characteristics linking it to the amount allegedly taken from the deceased.",
-                "eval_fn": lambda a_rat, a_full, a_iss: (
-                    ("MATCH", "AI Court correctly reasoned that recovered currency lacked distinct identifying characteristics linking it to the deceased.")
-                    if (any(w in a_rat for w in ["distinct", "identifying characteristic", "unidentifiable"]) and ("25" in a_rat or "cash" in a_rat))
-                    else (
-                        ("PARTIAL_MATCH", "AI Court noted absence of distinctive currency characteristics, but did not make it a cornerstone of the ratio decidendi.")
-                        if (any(w in a_full for w in ["distinct", "identifying characteristic", "unidentifiable"]) and ("25" in a_full or "cash" in a_full))
-                        else ("MISMATCH", "Framed in issue list (Issue 3), but omitted in ratio decidendi: AI Court grounded reasoning in chain of custody gaps and panch witness absence rather than analyzing whether the recovered currency lacked distinctive characteristics linking it to the deceased.")
-                    )
-                ),
-            },
-            {
-                "id": "THEME-4",
-                "name": "Section 411 IPC Dependence on Establishing Stolen Property",
-                "real_keywords": ["section 411", "section 379", "acquitted of theft", "stolen property", "dependency"],
-                "real_position": "Section 411 IPC requires proof that the property was stolen. Because the accused were acquitted of theft under Section 379 IPC, the Section 411 conviction could not be sustained on the same prosecution theory.",
-                "source_evidence": "Supreme Court Judgment § 2 (Issue II) & § 3: Conviction under Section 411 IPC was unsustainable where both accused had been acquitted of theft under Section 379 IPC. Section 411 required proof that the property was stolen.",
-                "eval_fn": lambda a_rat, a_full, a_iss: (
-                    ("MATCH", "AI Court correctly held Section 411 IPC conviction unsustainable following acquittal of theft under Section 379 IPC.")
-                    if ("411" in a_rat and "379" in a_rat and any(w in a_rat for w in ["unsustainable", "cannot be sustained", "stolen property"]))
-                    else (
-                        ("PARTIAL_MATCH", "AI Court noted relationship between Section 411 and 379 IPC in ratio decidendi.")
-                        if ("411" in a_rat and "379" in a_rat)
-                        else ("MISMATCH", "Framed in issue list (Issue 2), but omitted in ratio decidendi: AI Court omitted the statutory dependency of Section 411 IPC on proof of stolen property following Section 379 acquittal, relying instead on generic benefit of doubt.")
-                    )
-                ),
-            },
-        ]
-
-        # Evaluate defined themes active in the real judgment
-        for tdef in theme_defs:
-            if any(kw in real_full for kw in tdef["real_keywords"]):
-                match_status, ai_pos = tdef["eval_fn"](ai_ratio, ai_full, ai_issues_list)
-                theme_evaluations.append(
-                    ReasoningThemeComparison(
-                        theme_id=tdef["id"],
-                        theme_name=tdef["name"],
-                        real_court_position=tdef["real_position"],
-                        ai_position=ai_pos,
-                        match_status=match_status,
-                        source_evidence=tdef["source_evidence"],
-                    )
-                )
-
-        # Dynamic fallback if none of the defined themes were found in real record
-        if not theme_evaluations:
-            candidate_themes = {
-                "burden_of_proof": ["burden of proof", "initial burden", "reverse burden"],
-                "section_114_presumption": ["section 114", "presumption", "foundational facts"],
-                "recovered_cash_unidentifiable": ["25,000", "25000", "recovered cash", "identifying characteristics"],
-                "section_411_theft_dependency": ["section 411", "section 379", "acquitted of theft"],
-                "identification_tip": ["tip", "test identification parade", "dock identification"],
-                "independent_witnesses": ["independent public", "independent witness", "panch"],
-            }
-            idx = 1
-            for t_name, keywords in candidate_themes.items():
-                if any(kw in real_full for kw in keywords):
-                    is_match = any(kw in ai_full for kw in keywords)
-                    theme_evaluations.append(
-                        ReasoningThemeComparison(
-                            theme_id=f"THEME-{idx}",
-                            theme_name=t_name.replace("_", " ").title(),
-                            real_court_position=f"Authoritative ratio addressed {t_name.replace('_', ' ')}.",
-                            ai_position="Addressed in AI analysis." if is_match else "Omitted in AI analysis.",
-                            match_status="MATCH" if is_match else "MISMATCH",
-                            source_evidence=f"Keywords: {', '.join(keywords)}",
-                        )
-                    )
-                    idx += 1
-
-        # Calculate theme alignment points (MATCH=1.0, PARTIAL_MATCH=0.5, MISMATCH=0.0)
-        earned_theme_points = sum(
-            1.0 if t.match_status == "MATCH" else (0.5 if t.match_status == "PARTIAL_MATCH" else 0.0)
-            for t in theme_evaluations
-        )
-        total_real_themes = len(theme_evaluations)
-        matched_count = sum(1 for t in theme_evaluations if t.match_status in ("MATCH", "PARTIAL_MATCH"))
-
-        # Log missing themes for comparison reporting
-        for t in theme_evaluations:
-            if t.match_status == "MISMATCH":
-                missing.append(f"Core judicial reasoning omitted: {t.theme_name}")
-
-        # Detect spurious ratio ground (e.g. BSA Section 63 electronic certification)
-        spurious_electronic_ground = (
-            ("bsa" in ai_ratio or "electronic" in ai_ratio or "section 63" in ai_ratio)
-            and ("electronic" not in real_full and "cyber" not in real_full)
-        )
-        if spurious_electronic_ground:
-            errors.append(
-                ComparisonErrorDetail(
-                    type="unsupported_conclusion",
-                    severity="critical",
-                    ai_claim="Acquittal grounded in failure to satisfy electronic evidence certification (Section 63 BSA)",
-                    real_court_position="Acquittal grounded in failure of foundational facts, identification, and independent recovery witnesses",
-                    explanation=(
-                        "AI Court reached the same operative verdict (Acquittal) but through entirely erroneous ratio decidendi: "
-                        "it relied upon electronic evidence defect when the Real Court decided on foundational evidentiary infirmities."
-                    ),
-                )
-            )
-
-        applied_correct_law = not bool(spurious_electronic_ground)
+        total_real_themes = len(real_themes)
+        matched_count = sum(t.match_status == "MATCH" for t in theme_evaluations)
+        partial_count = sum(t.match_status == "PARTIAL_MATCH" for t in theme_evaluations)
+        earned = matched_count + 0.5 * partial_count
+        score = round(earned / total_real_themes * 100.0, 2) if total_real_themes else 0.0
+        addressed_issue = bool(matched_count + partial_count)
         considered_evidence = ai.reasoning.connected_evidence_to_findings
         evaluated_credibility = ai.reasoning.evaluated_credibility
         considered_contradictions = ai.reasoning.evaluated_contradictions
         considered_missing = ai.reasoning.evaluated_missing_evidence
         connected_findings = ai.reasoning.connected_evidence_to_findings
-
-        # Mathematically consistent reasoning score calculation:
-        # Theme alignment represents 60% of total reasoning score
-        # Structural assessment represents 40% of total reasoning score
-        if total_real_themes > 0:
-            theme_ratio = earned_theme_points / total_real_themes
-            addressed_issue = theme_ratio >= 0.5
-            theme_score = 60.0 * theme_ratio
-            structure_score = (
-                (10.0 if applied_correct_law else 0.0)
-                + (10.0 if considered_missing else 0.0)
-                + (10.0 if evaluated_credibility else 0.0)
-                + (5.0 if considered_contradictions else 0.0)
-                + (5.0 if connected_findings else 0.0)
-            )
-            if earned_theme_points == 0:
-                base_score = min(25.0, structure_score * 0.5)
-            else:
-                base_score = theme_score + structure_score
-        else:
-            addressed_issue = True
-            base_score = 70.0
-
-        if spurious_electronic_ground:
-            base_score = min(base_score, 30.0)
-
-        score = max(0.0, min(100.0, round(base_score, 2)))
+        applied_correct_law = bool(ai.reasoning.ratio_decidendi or ai.reasoning.key_chains)
 
         category_status = (
             ComparisonCategoryStatus.MATCH.value if score >= 75.0
             else (ComparisonCategoryStatus.PARTIAL_MATCH.value if score >= 35.0 else ComparisonCategoryStatus.MISMATCH.value)
         )
-
         explanation = (
-            f"Reasoning alignment score: {score}%. "
-            f"Evaluated {total_real_themes} core judicial themes individually (Earned points: {earned_theme_points}/{total_real_themes}). "
-            f"Addressed real issues: {addressed_issue}. "
-            f"Note: Operative finding alignment on charges does not imply concordance in judicial ratio decidendi."
+            f"Source-derived reasoning alignment: {score}%. Evaluated {total_real_themes} real-court propositions "
+            f"({matched_count} matched, {partial_count} partial, {total_real_themes - matched_count - partial_count} omitted). "
+            "Charge outcome alignment is scored separately from judicial reasoning."
         )
-
         return LegalReasoningComparisonResult(
             addressed_actual_legal_issue=addressed_issue,
             considered_relevant_evidence=considered_evidence,
@@ -1272,14 +1158,14 @@ class JudgmentComparator:
             considered_contradictions=considered_contradictions,
             considered_missing_evidence=considered_missing,
             connected_evidence_to_findings=connected_findings,
-            logically_valid_chain_of_reasoning=bool(earned_theme_points > 0 or not spurious_electronic_ground),
+            logically_valid_chain_of_reasoning=bool(earned > 0),
             score=score,
             explanation=explanation,
             ai_extracted_position=ai.reasoning.ratio_decidendi[:300],
             real_extracted_position=real.reasoning.ratio_decidendi[:300],
             status=category_status,
-            is_assessable=True,
-            matched_themes_count=matched_count,
+            is_assessable=bool(total_real_themes),
+            matched_themes_count=matched_count + partial_count,
             total_real_themes_count=total_real_themes,
             theme_evaluations=theme_evaluations,
         )
@@ -1303,25 +1189,26 @@ class JudgmentComparator:
                 r_sec = self._extract_section_number(r_ch)
                 for a_k, a_v in ai.findings.items():
                     a_sec = self._extract_section_number(a_k)
-                    if (a_sec and r_sec and a_sec == r_sec) or any(w in a_k.lower() and w in r_ch.lower() for w in ["317", "411", "303", "379", "arms", "201", "302"]):
+                    same_accused = not (ai_charges_name := next((c.accused_name for c in ai.charges if c.statute == a_k), None)) or not (real_charges_name := next((c.accused_name for c in real.charges if c.statute == r_ch), None)) or self._same_person(ai_charges_name, real_charges_name)
+                    if same_accused and a_sec and r_sec and a_sec == r_sec:
                         ai_find = a_v
                         break
 
             aligned = False
             if ai_find:
-                a_lower = ai_find.lower()
-                r_lower = str(r_find).lower()
-                if ("acquitt" in a_lower and "acquitt" in r_lower) or ("guilty" in a_lower and "guilty" in r_lower) or ("convict" in a_lower and "convict" in r_lower):
+                ai_outcome = self._charge_outcome(ai_find)
+                real_outcome = self._charge_outcome(str(r_find))
+                if ai_outcome and real_outcome and ai_outcome == real_outcome:
                     aligned = True
                     matched_count += 1
-                else:
+                elif ai_outcome and real_outcome:
                     errors.append(
                         ComparisonErrorDetail(
                             type="incorrect_finding",
                             severity="high",
                             ai_claim=f"{r_ch}: {ai_find}",
                             real_court_position=f"{r_ch}: {r_find}",
-                            explanation=f"Finding on charge '{r_ch}' diverges from Real Court.",
+                            explanation=f"Final charge disposition differs: AI={ai_outcome}; real court={real_outcome}.",
                         )
                     )
 
@@ -1330,16 +1217,20 @@ class JudgmentComparator:
                 "ai_finding": ai_find or "Not evaluated",
                 "real_finding": str(r_find),
                 "aligned": aligned,
+                "ai_charge_outcome": self._charge_outcome(ai_find or ""),
+                "real_charge_outcome": self._charge_outcome(str(r_find)),
+                "outcome_assessable": bool(self._charge_outcome(ai_find or "") and self._charge_outcome(str(r_find))),
             })
 
-        total = len(issue_findings) or 1
-        score = round((matched_count / total) * 100.0, 2)
+        assessable_findings = [item for item in issue_findings if item["outcome_assessable"]]
+        total = len(assessable_findings)
+        score = round((matched_count / total) * 100.0, 2) if total else 0.0
         category_status = (
             ComparisonCategoryStatus.MATCH.value if score >= 80.0
             else (ComparisonCategoryStatus.PARTIAL_MATCH.value if score >= 40.0 else ComparisonCategoryStatus.MISMATCH.value)
         )
         explanation = (
-            f"Findings aligned on {matched_count} of {total} charges/issues ({score}%). "
+            f"Final charge outcomes aligned on {matched_count} of {total} assessable charges ({score}%). "
             f"Note: Operative finding alignment evaluates charge disposal, kept strictly separate from legal reasoning and ratio decidendi alignment."
         )
 
@@ -1349,9 +1240,31 @@ class JudgmentComparator:
             explanation=explanation,
             ai_extracted_position="; ".join(f"{k}: {v}" for k, v in ai.findings.items()),
             real_extracted_position="; ".join(f"{k}: {v}" for k, v in real.findings.items()),
-            status=category_status,
-            is_assessable=True,
+            status=category_status if total else ComparisonCategoryStatus.INSUFFICIENT_DATA.value,
+            is_assessable=bool(total),
         )
+
+    @staticmethod
+    def _charge_outcome(text: str) -> Optional[str]:
+        """Return only an explicit final charge disposition, never an ingredient result."""
+        value = re.sub(r"\s+", " ", text.lower()).strip(" .:;\n\t")
+        # Appellate disposition language has explicit direction.
+        if re.search(r"\bconviction\s+(?:was\s+)?set\s+aside\b|\bconviction\s+quashed\b|\bconviction\s+overturned\b", value):
+            return "acquittal"
+        if re.search(r"\bconviction\s+(?:was\s+)?upheld\b|\bconviction\s+affirmed\b", value):
+            return "conviction"
+        if re.search(r"\b(?:acquitted|acquittal|not guilty)\b", value):
+            return "acquittal"
+        if re.search(r"\b(?:convicted|conviction|found guilty|guilty)\b", value):
+            return "conviction"
+        # Bare normalized charge findings such as "NOT PROVED" are treated as
+        # charge outcomes because they are attached to a charge key. Longer
+        # ingredient discussions do not qualify unless they name the charge.
+        if value in {"not proved", "not proven", "not established"} or re.search(
+            r"\b(?:charge|offence|offense)\b.{0,50}\bnot\s+prov(?:ed|en)\b", value
+        ):
+            return "acquittal"
+        return None
 
     # --------------------------------------------------------------------------
     # J. Final Order Alignment
@@ -1417,6 +1330,6 @@ class JudgmentComparator:
             explanation=explanation,
             ai_extracted_position=ai_order[:200],
             real_extracted_position=real_order[:200],
-            status=category_status,
-            is_assessable=True,
+            status=category_status if (ai_order and real_order) else ComparisonCategoryStatus.INSUFFICIENT_DATA.value,
+            is_assessable=bool(ai_order and real_order),
         )

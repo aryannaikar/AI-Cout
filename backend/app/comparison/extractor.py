@@ -277,7 +277,13 @@ class JudgmentNormalizer:
 
         findings: Dict[str, str] = {}
         for ch in charges:
-            findings[ch.statute] = ch.finding or raw_verdict
+            # Do not copy the global operative verdict onto every section
+            # mentioned in a judgment; many may concern procedural history or
+            # different accused. Only retain an explicit charge-level finding.
+            charge_finding = ch.finding or cls._extract_explicit_charge_finding(substantive_text, ch.statute)
+            if charge_finding:
+                ch.finding = charge_finding
+                findings[ch.statute] = charge_finding
 
         extraction_warnings: List[str] = []
         if is_summary:
@@ -312,6 +318,25 @@ class JudgmentNormalizer:
             is_ground_truth_summary=is_summary,
             extraction_warnings=extraction_warnings,
         )
+
+    @classmethod
+    def _extract_explicit_charge_finding(cls, text: str, statute: str) -> Optional[str]:
+        """Extract a disposition only when it is explicitly attached to a charge reference."""
+        section_match = re.search(r"\b([0-9]{1,4}[A-Za-z]?)\b", statute)
+        if not section_match:
+            return None
+        section = re.escape(section_match.group(1))
+        patterns = (
+            rf"(?:section|sec\.?|u/s)\s*{section}\s*(?:of\s+the\s+)?(?:ipc|indian penal code|bns)?\s*[:—-]\s*([^\n.;]{{1,100}})",
+            rf"(?:section|sec\.?|u/s)\s*{section}\s+(?:was|is|stands?)\s+(acquitted|not guilty|not proved|not proven|convicted|guilty|upheld|affirmed|set aside)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                candidate = match.group(1).strip()
+                if re.search(r"\b(acquitt|not guilty|not prov(?:ed|en)|convict|guilty|upheld|affirmed|set aside)\b", candidate, re.IGNORECASE):
+                    return candidate
+        return None
 
     @classmethod
     def _normalize_from_dict(cls, data: dict[str, Any]) -> NormalizedJudgment:
@@ -723,7 +748,7 @@ class JudgmentNormalizer:
         seen = set()
 
         # Check for accused-specific charges in procedural text
-        # Example: "charges against Moulana under Sections 302, 201 and 379 IPC, and against Shabuddin under Sections 379 and 201 IPC"
+        # Capture explicit accused-to-charge attribution when source text provides it.
         m_accused_charges = re.findall(
             r"(?:against|framed against)\s+([A-Za-z\s]+?)\s+under\s+(?:Sections?|Sec\.)?\s*([0-9A-Za-z\s,and]+?)\s+(IPC|Indian Penal Code|BNS|Arms Act)",
             text,

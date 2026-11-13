@@ -186,6 +186,7 @@ class ComparisonReportGenerator:
             sub_sep,
             f"  Status        : {cls._format_status(report.factual_comparison.status)}",
             f"  Score         : {report.factual_comparison.score}% (Correctness: {report.factual_comparison.correctness_score}%, Completeness: {report.factual_comparison.completeness_score}%)",
+            f"  Assessed Facts: AI {report.factual_comparison.assessed_ai_facts} | Real {report.factual_comparison.assessed_real_facts}",
             f"  Explanation   : {report.factual_comparison.explanation}",
             f"  Verified Facts: {len(report.factual_comparison.correct_facts)}",
             f"  Invented Facts: {len(report.factual_comparison.invented_facts)}",
@@ -224,7 +225,20 @@ class ComparisonReportGenerator:
             f"  Status        : {cls._format_status(report.evidence_comparison.status)}",
             f"  Assessable    : {report.evidence_comparison.is_assessable}",
             f"  Score         : {'Not assessed' if is_evi_excluded else f'{report.evidence_comparison.score}%'}",
+            f"  Assessed Items: AI {report.evidence_comparison.assessed_ai_evidence} | Real {report.evidence_comparison.assessed_real_evidence}",
             f"  Explanation   : {report.evidence_comparison.explanation}",
+        ])
+        if report.evidence_comparison.correctly_considered:
+            lines.append(f"  Correctly Considered: {', '.join(report.evidence_comparison.correctly_considered)}")
+        if report.evidence_comparison.ignored_evidence:
+            lines.append(f"  Omitted: {', '.join(report.evidence_comparison.ignored_evidence)}")
+        if report.evidence_comparison.misattributed_evidence:
+            lines.append(f"  Misinterpreted/Misattributed: {', '.join(report.evidence_comparison.misattributed_evidence)}")
+        if report.evidence_comparison.misinterpreted_evidence:
+            lines.append(f"  Incorrect Significance: {', '.join(report.evidence_comparison.misinterpreted_evidence)}")
+        if report.evidence_comparison.invented_evidence:
+            lines.append(f"  Unsupported/Inventions: {', '.join(report.evidence_comparison.invented_evidence)}")
+        lines.extend([
             "",
             "9. LEGAL PROVISION COMPARISON",
             sub_sep,
@@ -321,10 +335,7 @@ class ComparisonReportGenerator:
             ("factual_accuracy", "Factual Accuracy", report.scores.factual_accuracy),
             ("issue_alignment", "Issue Alignment", report.scores.issue_alignment),
             ("evidence_alignment", "Evidence Alignment", report.scores.evidence_alignment),
-            ("finding_alignment", "Finding Alignment", report.scores.finding_alignment),
             ("charge_alignment", "Charge Alignment", report.scores.charge_alignment),
-            ("witness_alignment", "Witness Alignment", report.scores.witness_alignment),
-            ("legal_alignment", "Legal Provisions", report.scores.legal_alignment),
             ("final_order_alignment", "Final Order Alignment", report.scores.final_order_alignment),
         ]
         for key, label, val in cat_map:
@@ -349,6 +360,7 @@ class ComparisonReportGenerator:
             f"  SUBSTANTIVE BENCHMARK SCORE : {report.scores.substantive_score:>6.2f}% (Reasoning/Substance Only)" if report.scores.substantive_score is not None else "  SUBSTANTIVE BENCHMARK SCORE :    N/A",
             f"  VERDICT BENCHMARK SCORE     : {report.scores.verdict_score:>6.2f}% (Pure Outcome Alignment)" if report.scores.verdict_score is not None else "  VERDICT BENCHMARK SCORE     :    N/A",
             f"  {benchmark_name:<28}: {report.scores.overall_score:>6.2f}% ({benchmark_note})",
+            f"  ACTIVE WEIGHT DENOMINATOR   : {report.scores.active_weight_denominator:.1%} of the fixed 100% rubric",
             f"  Scoring Formula             : {report.scores.scoring_formula}",
             "",
             "17. OVERALL CONCLUSION",

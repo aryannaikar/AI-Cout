@@ -94,6 +94,7 @@ export interface ComparisonScores {
   substantive_score?: number | null;
   verdict_score?: number | null;
   active_weights?: Record<string, number>;
+  active_weight_denominator?: number;
   excluded_categories?: string[];
   scoring_formula?: string;
 }

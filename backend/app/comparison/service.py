@@ -73,6 +73,26 @@ class ComparisonService:
             unrelated_points,
         ) = comparator.compare(ai_norm, real_norm)
 
+        # Charge Alignment includes the finding on each charge. Findings remain
+        # visible as a diagnostic section, but are not an independently weighted
+        # core dimension. Average only assessable charge/finding components.
+        charge_components = [
+            value for value, assessable in (
+                (charge_comp.score, charge_comp.is_assessable),
+                (finding_comp.score, finding_comp.is_assessable),
+            ) if assessable
+        ]
+        core_charge_score = sum(charge_components) / len(charge_components) if charge_components else charge_comp.score
+        if charge_components:
+            charge_comp = charge_comp.model_copy(update={
+                "score": round(core_charge_score, 2),
+                "explanation": (
+                    f"{charge_comp.explanation} Core Charge Alignment combines charge matching "
+                    f"({charge_comp.score:.2f}%) and charge-wise findings "
+                    f"({finding_comp.score:.2f}%) across assessable components; findings are diagnostic only outside this merged score."
+                ),
+            })
+
         assess_map = {
             "verdict_alignment": verdict_comp.is_assessable,
             "reasoning_alignment": reasoning_comp.is_assessable,
@@ -80,7 +100,7 @@ class ComparisonService:
             "issue_alignment": issue_comp.is_assessable,
             "evidence_alignment": evidence_comp.is_assessable,
             "finding_alignment": finding_comp.is_assessable,
-            "charge_alignment": charge_comp.is_assessable,
+            "charge_alignment": bool(charge_components),
             "witness_alignment": witness_comp.is_assessable,
             "legal_alignment": legal_comp.is_assessable,
             "final_order_alignment": order_comp.is_assessable,
@@ -89,7 +109,7 @@ class ComparisonService:
             verdict_alignment=verdict_comp.score,
             issue_alignment=issue_comp.score,
             factual_accuracy=fact_comp.score,
-            charge_alignment=charge_comp.score,
+            charge_alignment=core_charge_score,
             witness_alignment=witness_comp.score,
             evidence_alignment=evidence_comp.score,
             legal_alignment=legal_comp.score,

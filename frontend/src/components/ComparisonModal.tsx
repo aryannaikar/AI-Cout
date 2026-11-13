@@ -351,8 +351,8 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
                         </div>
                         <span style={{ fontSize: '0.75rem', color: '#94A3B8', display: 'block' }}>
                           {isPartial
-                            ? `Re-normalized over ${10 - excludedCount} assessable categories`
-                            : 'Balanced 10-Factor Score'}
+                            ? `Re-normalized across ${Object.keys(report.scores.active_weights || {}).length} assessable dimensions; denominator ${((report.scores.active_weight_denominator ?? 1) * 100).toFixed(0)}%`
+                            : '7-Dimensional Benchmark Score'}
                         </span>
                         {report.scores.substantive_score != null && (
                           <div style={{ fontSize: '0.78rem', color: '#CBD5E1', marginTop: '4px' }}>
@@ -493,7 +493,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <h4 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--gold-primary)' }}>
-                    10-DIMENSIONAL BENCHMARK SCORES
+                    7-DIMENSIONAL BENCHMARK SCORES
                   </h4>
                   {report.scores.excluded_categories && report.scores.excluded_categories.length > 0 && (
                     <span style={{ fontSize: '0.74rem', color: '#94A3B8' }}>
@@ -504,16 +504,13 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
                   {[
-                    { key: 'verdict_alignment', label: 'Verdict', val: report.scores.verdict_alignment, defaultWt: '20%' },
-                    { key: 'reasoning_alignment', label: 'Reasoning', val: report.scores.reasoning_alignment, defaultWt: '20%' },
-                    { key: 'factual_accuracy', label: 'Factual Accuracy', val: report.scores.factual_accuracy, defaultWt: '12%' },
-                    { key: 'issue_alignment', label: 'Issue Framing', val: report.scores.issue_alignment, defaultWt: '10%' },
-                    { key: 'evidence_alignment', label: 'Evidence', val: report.scores.evidence_alignment, defaultWt: '10%' },
-                    { key: 'finding_alignment', label: 'Findings', val: report.scores.finding_alignment, defaultWt: '8%' },
-                    { key: 'charge_alignment', label: 'Charges', val: report.scores.charge_alignment, defaultWt: '5%' },
-                    { key: 'witness_alignment', label: 'Witnesses', val: report.scores.witness_alignment, defaultWt: '5%' },
-                    { key: 'legal_alignment', label: 'Legal Citations', val: report.scores.legal_alignment, defaultWt: '5%' },
-                    { key: 'final_order_alignment', label: 'Final Order', val: report.scores.final_order_alignment, defaultWt: '5%' },
+                    { key: 'verdict_alignment', label: 'Verdict Alignment', val: report.scores.verdict_alignment, defaultWt: '20%' },
+                    { key: 'reasoning_alignment', label: 'Legal Reasoning Alignment', val: report.scores.reasoning_alignment, defaultWt: '25%' },
+                    { key: 'factual_accuracy', label: 'Factual Accuracy', val: report.scores.factual_accuracy, defaultWt: '15%' },
+                    { key: 'issue_alignment', label: 'Issue Alignment', val: report.scores.issue_alignment, defaultWt: '10%' },
+                    { key: 'evidence_alignment', label: 'Evidence Alignment', val: report.scores.evidence_alignment, defaultWt: '15%' },
+                    { key: 'charge_alignment', label: 'Charge Alignment (incl. findings)', val: report.scores.charge_alignment, defaultWt: '10%' },
+                    { key: 'final_order_alignment', label: 'Final Order Alignment', val: report.scores.final_order_alignment, defaultWt: '5%' },
                   ].map((item, idx) => {
                     const isExcluded = report.scores.excluded_categories?.includes(item.key);
                     const activeWeight = report.scores.active_weights?.[item.key];
