@@ -1,0 +1,95 @@
+================================================================================
+IN THE COURT OF SESSIONS / AI COURT OF INDIA
+Case: State v. Accused
+Judgment ID: JUDG-CASE-001
+Date of Decision: 2026-11-13
+================================================================================
+
+SECTION 1: CASE BACKGROUND & PROSECUTION ORIGIN
+--------------------------------------------------------------------------------
+The present proceedings arise out of allegations framed in State v. Accused (Sessions Case No. 45/2024). The prosecution alleges that Prosecution alleges accused was found in possession of stolen property (vehicle) and unlicensed country-made firearm. The accused pleaded not guilty and claimed trial.
+
+SECTION 2: POINTS FOR DETERMINATION
+--------------------------------------------------------------------------------
+1. Whether the recovered property constitutes stolen property in possession of the accused under Section 317 BNS / Section 412 IPC?
+2. Whether dock identification by witness without a prior Test Identification Parade (TIP) is legally reliable?
+3. Whether prosecution proved exclusive conscious possession beyond reasonable doubt?
+4. Whether electronic records are admissible without compliance with Section 63 BSA?
+
+SECTION 3: APPLICABLE STATUTORY LAW & CONSTITUTIONAL PROVISIONS
+--------------------------------------------------------------------------------
+- Bharatiya Nyaya Sanhita, 2023, Section 317
+- Bharatiya Sakshya Adhiniyam, 2023 (Evidentiary proof, Section 61, Section 63)
+- Bharatiya Nyaya Sanhita, 2023, Section 317 [Page 85, Source: bharatiya_nyaya_sanhita_2023.pdf]
+
+SECTION 4: JUDICIAL APPRAISAL OF DOCUMENTARY & ELECTRONIC EXHIBITS
+--------------------------------------------------------------------------------
+The court has inspected 2 items of evidence. Documentary, material, and oral evidence governed by primary proof and Section 57/61 BSA. The court notes serious investigative gaps: Absence of independent civilian panch witnesses at time of search/seizure..
+
+SECTION 5: CREDIBILITY ANALYSIS OF ORAL WITNESS TESTIMONY
+--------------------------------------------------------------------------------
+The prosecution examined 2 witnesses. While the official police witnesses deposed consistently regarding the procedural steps, the absence of independent public witnesses requires the court to scrutinize their testimony with heightened caution.
+
+SECTION 6: SUBMISSIONS ADVANCED BY THE PROSECUTION
+--------------------------------------------------------------------------------
+Learned Prosecutor argued that The prosecution submits that on the date of the incident, Accused acted with dishonest intent in violation of the law. The physical evidence and witness testimony together establish guilt beyond reasonable doubt. The prosecution placed reliance on 3 exhibits and contended that statutory presumptions operate against the accused.
+
+SECTION 7: SUBMISSIONS ADVANCED BY THE DEFENSE
+--------------------------------------------------------------------------------
+Learned Defense Counsel contended that The defence submits that Accused has been falsely implicated based on nothing more than suspicion. The prosecution case has serious contradictions, procedural failures, and investigative gaps, which mean the charge has not been proved beyond reasonable doubt. The defense highlighted that The prosecution has not ruled out the possibility that the recovery was planted.; No independent civilian witnesses were present during the alleged seizure. and prayed for complete acquittal.
+
+SECTION 8: ISSUE-BY-ISSUE JUDICIAL DETERMINATION
+--------------------------------------------------------------------------------
+Issue #1: Whether the recovered property constitutes stolen property in possession of the accused under Section 317 BNS / Section 412 IPC?
+  Governing Law: Bharatiya Nyaya Sanhita & Bharatiya Sakshya Adhiniyam, 2023
+  Prosecution Case: State submits statutory ingredients are satisfied by evidence.
+  Defense Plea: Defense submits material contradictions vitiate proof beyond reasonable doubt.
+  Evidentiary Analysis: Evaluating the conflicting positions under prosecution_vs_defense, the court must test whether the chain of evidence is complete.
+  Finding: PROVED
+
+Issue #2: Whether dock identification by witness without a prior Test Identification Parade (TIP) is legally reliable?
+  Governing Law: Bharatiya Nyaya Sanhita & Bharatiya Sakshya Adhiniyam, 2023
+  Prosecution Case: State submits statutory ingredients are satisfied by evidence.
+  Defense Plea: Defense submits material contradictions vitiate proof beyond reasonable doubt.
+  Evidentiary Analysis: Evaluating the conflicting positions under prosecution_vs_defense, the court must test whether the chain of evidence is complete.
+  Finding: NOT PROVED
+
+Issue #3: Whether prosecution proved exclusive conscious possession beyond reasonable doubt?
+  Governing Law: Bharatiya Nyaya Sanhita & Bharatiya Sakshya Adhiniyam, 2023
+  Prosecution Case: State submits statutory ingredients are satisfied by evidence.
+  Defense Plea: Defense submits material contradictions vitiate proof beyond reasonable doubt.
+  Evidentiary Analysis: Evaluating the conflicting positions under prosecution_vs_defense, the court must test whether the chain of evidence is complete.
+  Finding: NOT PROVED
+
+Issue #4: Whether electronic records are admissible without compliance with Section 63 BSA?
+  Governing Law: Bharatiya Nyaya Sanhita & Bharatiya Sakshya Adhiniyam, 2023
+  Prosecution Case: State submits statutory ingredients are satisfied by evidence.
+  Defense Plea: Defense submits material contradictions vitiate proof beyond reasonable doubt.
+  Evidentiary Analysis: Evaluating the conflicting positions under prosecution_vs_defense, the court must test whether the chain of evidence is complete.
+  Finding: NOT PROVED
+
+SECTION 9: FINDINGS ON EACH STATUTORY CHARGE
+--------------------------------------------------------------------------------
+- Bharatiya Nyaya Sanhita, 2023, Section 317: ACQUITTED (Benefit of Doubt)
+
+SECTION 10: OPERATIVE ORDER & FINAL DECISION
+--------------------------------------------------------------------------------
+VERDICT: ACQUITTAL
+
+SECTION 11: RATIO DECIDENDI & DETAILED JUDICIAL REASONING
+--------------------------------------------------------------------------------
+In a criminal trial under Indian law, the distance between 'may be true' and 'must be true' is long and divides vague conjectures from statutory certainty. Here, the conflict report recorded 6 unresolved contradictions. The prosecution having failed to bridge the gaps in the chain of custody and failing to join independent public witnesses, the hypothesis of innocence cannot be ruled out. Consequently, the accused is entitled to the benefit of doubt.
+
+SECTION 12: STATUTORY CITATIONS & PRECEDENTS
+--------------------------------------------------------------------------------
+- Bharatiya Nyaya Sanhita, 2023, Section 317 [Page 85, Source: bharatiya_nyaya_sanhita_2023.pdf]
+- Bharatiya Sakshya Adhiniyam, 2023, Section 108 (When a person is accused of any offence, the burden of proving the existence of) [Page 32, Source: Bharatiya Sakshya Adhiniyam, 2023 (BSA).pdf]
+- Bharatiya Sakshya Adhiniyam, 2023, Section 106 (The burden of proof as to any particular fact lies on that person who wishes the) [Page 32, Source: Bharatiya Sakshya Adhiniyam, 2023 (BSA).pdf]
+- Bharatiya Sakshya Adhiniyam, 2023, Section 120 (In a prosecution for rape under sub) [Page 35, Source: Bharatiya Sakshya Adhiniyam, 2023 (BSA).pdf]
+- Bharatiya Sakshya Adhiniyam, 2023, Section 149 (When a witness is cross) [Page 40, Source: Bharatiya Sakshya Adhiniyam, 2023 (BSA).pdf]
+- Bharatiya Sakshya Adhiniyam, 2023, Section 104 (Whoever desires any Court to give judgment as to any legal right or liability) [Page 32, Source: Bharatiya Sakshya Adhiniyam, 2023 (BSA).pdf]
+
+================================================================================
+Pronounced in Open Simulated Court by Presiding Judicial Bench.
+AI Court of India — Autonomous Judicial Reasoning Engine
+================================================================================

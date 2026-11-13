@@ -1,0 +1,139 @@
+"""
+Integration tests for the AI Court of India FastAPI endpoints.
+Tests upload, strict security validation (rejecting Ground Truth),
+SSE live stream event generation, and artifact downloads.
+"""
+
+from io import BytesIO
+from pathlib import Path
+from unittest.mock import patch
+
+import fitz  # PyMuPDF
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.models.legal_models import WebResearchItem, WebResearchResult
+from tests.phase2.test_case_agent import SAMPLE_CASE_PACKET_TEXT
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+@pytest.fixture
+def valid_pdf_bytes():
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((50, 50), SAMPLE_CASE_PACKET_TEXT)
+    pdf_bytes = doc.write()
+    doc.close()
+    return pdf_bytes
+
+
+def test_api_health(client: TestClient):
+    """Verify health endpoint."""
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
+
+
+def test_api_upload_valid_case_packet(client: TestClient, valid_pdf_bytes: bytes):
+    """Verify upload of a valid Case Packet PDF."""
+    files = {
+        "file": ("Case_Packet_45_2024.pdf", BytesIO(valid_pdf_bytes), "application/pdf")
+    }
+    response = client.post("/api/court/upload", files=files)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is True
+    assert data["upload_id"].startswith("up_")
+    assert data["filename"] == "Case_Packet_45_2024.pdf"
+    assert data["page_count"] >= 1
+
+
+def test_api_upload_rejects_non_pdf(client: TestClient):
+    """Verify non-PDF uploads are rejected with 400 Bad Request."""
+    files = {
+        "file": ("case_summary.txt", BytesIO(b"Ordinary text file"), "text/plain")
+    }
+    response = client.post("/api/court/upload", files=files)
+    assert response.status_code == 400
+    assert "Only PDF Case Packets are supported" in response.json()["detail"]
+
+
+def test_api_upload_rejects_ground_truth_filename(client: TestClient, valid_pdf_bytes: bytes):
+    """Verify filenames referencing ground truth or verdicts are rejected with 403 Forbidden."""
+    files = {
+        "file": ("Ground_Truth_Verdict.pdf", BytesIO(valid_pdf_bytes), "application/pdf")
+    }
+    response = client.post("/api/court/upload", files=files)
+    assert response.status_code == 403
+    assert "Security Violation" in response.json()["detail"]
+
+
+def test_api_upload_rejects_ground_truth_content(client: TestClient):
+    """Verify PDFs with embedded ground-truth signatures are rejected with 403 Forbidden."""
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((50, 50), "REAL COURT JUDGMENT: Accused is hereby convicted.")
+    pdf_bytes = doc.write()
+    doc.close()
+
+    files = {
+        "file": ("Case_Packet.pdf", BytesIO(pdf_bytes), "application/pdf")
+    }
+    response = client.post("/api/court/upload", files=files)
+    assert response.status_code == 403
+    assert "Security Violation" in response.json()["detail"]
+
+
+def test_api_stream_proceedings_with_mock_web(client: TestClient):
+    """Verify SSE streaming yields progressive courtroom events."""
+    mock_web = WebResearchResult(
+        research_id="RES-MOCK-API",
+        side="prosecution",
+        research_question="Standard of proof under BSA Section 63",
+        finding="Mandatory certificate required.",
+        why_it_matters="Relevant to admissibility of electronic records.",
+        sources=[
+            WebResearchItem(
+                title="State of Karnataka v. Union",
+                url="https://indiankanoon.org/doc/112233",
+                passage_summary="Certificate requirement for electronic call records.",
+                why_source_matters="Governs Exhibit P-2 admissibility.",
+            )
+        ],
+    )
+
+    with patch("app.agents.web_research_agent.WebResearchAgent.research", return_value=mock_web):
+        response = client.post("/api/court/stream", json={"case_text": SAMPLE_CASE_PACKET_TEXT})
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers["content-type"]
+
+        body_text = response.text
+        assert "session_started" in body_text
+        assert "case_understanding" in body_text
+        assert "prosecutor" in body_text
+        assert "defense" in body_text
+        assert "judge" in body_text
+        assert "court_completed" in body_text
+
+
+def test_api_download_artifact_handling(client: TestClient):
+    """Verify artifact download endpoint handles existing/non-existing files properly."""
+    # Non-existent case returns 404
+    res_404 = client.get("/api/court/cases/NON_EXISTENT_CASE_9999/download/pdf")
+    assert res_404.status_code == 404
+
+    # Invalid format returns 400
+    res_invalid_fmt = client.get("/api/court/cases/CASE-2024-001/download/exe")
+    assert res_invalid_fmt.status_code == 400
+
+    # If CASE-2024-001 was previously generated by Phase 4 tests, download should succeed
+    case_pdf = Path("backend/data/cases/CASE-2024-001/output/ai_judgment.pdf")
+    if case_pdf.exists():
+        res_pdf = client.get("/api/court/cases/CASE-2024-001/download/pdf")
+        assert res_pdf.status_code == 200
+        assert res_pdf.headers["content-type"] == "application/pdf"

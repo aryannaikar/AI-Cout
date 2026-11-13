@@ -1,0 +1,23 @@
+# Environment variables and secrets
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Temporary Uploads
+backend/data/cases/uploads/*
+!backend/data/cases/uploads/.gitkeep

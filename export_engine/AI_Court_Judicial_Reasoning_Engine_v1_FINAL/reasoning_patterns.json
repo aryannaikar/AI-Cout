@@ -1,0 +1,62 @@
+[
+  {
+    "pattern_id":"RP001",
+    "pattern_name":"Medical and Oral Evidence Comparison",
+    "description":"Evaluating whether medical findings support or contradict witness testimony.",
+    "reasoning_steps":[
+      "Identify the witness version",
+      "Examine medical evidence",
+      "Compare injuries and alleged weapon",
+      "Identify inconsistencies",
+      "Assess their impact on credibility"
+    ]
+  },
+  {
+    "pattern_id":"RP002",
+    "pattern_name":"Contradiction and Witness Credibility",
+    "description":"Evaluating inconsistencies between witness statements and earlier accounts.",
+    "reasoning_steps":[
+      "Identify the disputed testimony",
+      "Compare examination and cross-examination",
+      "Check earlier police statements",
+      "Distinguish material from minor contradictions",
+      "Assess reliability"
+    ]
+  },
+  {
+    "pattern_id":"RP003",
+    "pattern_name":"Circumstantial Evidence Chain",
+    "description":"Evaluating whether individual circumstances form a complete chain.",
+    "reasoning_steps":[
+      "Identify each circumstance",
+      "Examine supporting evidence",
+      "Test links between circumstances",
+      "Identify missing links",
+      "Assess whether alternative explanations remain"
+    ]
+  },
+  {
+    "pattern_id":"RP004",
+    "pattern_name":"Legal Ingredients and Evidence Application",
+    "description":"Checking whether established facts satisfy the legal ingredients of an offence.",
+    "reasoning_steps":[
+      "Identify the charged offence",
+      "Identify its essential legal ingredients",
+      "Map evidence to each ingredient",
+      "Identify unsupported ingredients",
+      "Reach a reasoned finding"
+    ]
+  },
+  {
+    "pattern_id":"RP005",
+    "pattern_name":"Evidence Reliability and Corroboration",
+    "description":"Assessing reliability of witnesses and supporting evidence.",
+    "reasoning_steps":[
+      "Identify the primary evidence",
+      "Check corroborating evidence",
+      "Examine inconsistencies and limitations",
+      "Assess evidentiary reliability",
+      "Explain the resulting finding"
+    ]
+  }
+]
