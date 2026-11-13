@@ -92,7 +92,9 @@ class CaseUnderstandingAgent:
             "CRITICAL INSTRUCTIONS:\n"
             "1. Ground all analysis strictly in the provided text. Do NOT introduce electronic record issues (e.g. Section 63 BSA / 65B IEA) unless electronic evidence is actually present in the case packet.\n"
             "2. Ground charges strictly in the provided text and applicable statute (IPC for pre-2024 / historical cases, BNS for 2024+ cases).\n"
-            "3. Identify any missing or uncertain evidentiary items (e.g. absence of independent public witnesses, uncalled witnesses, missing documents) in missing_or_uncertain_info.\n\n"
+            "3. Extract proceeding_type and decision_subject only when the packet explicitly identifies the current trial, appeal, revision, or named accused/appellant. Keep them null if unclear.\n"
+            "4. Keep charges tied to their named accused and set Charge.record_status: current only for charges whose liability is presently before the court; procedural_history for earlier charges/findings not under current review; other_accused for charges belonging to another accused; uncertain if unclear. In appeals identify the order/count under appeal. Never convert allegations or prior charges into current charges.\n"
+            "5. Identify any missing or uncertain evidentiary items (e.g. absence of independent public witnesses, uncalled witnesses, missing documents) in missing_or_uncertain_info.\n\n"
             f"Case Packet Text:\n{case_text[:12000]}"
         )
 

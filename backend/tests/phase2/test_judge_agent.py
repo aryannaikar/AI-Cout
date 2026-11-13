@@ -98,19 +98,24 @@ def make_record():
 
 
 class JudgeLLMMock:
-    def __init__(self, *, fail=False, invent_reference=False):
+    def __init__(self, *, fail=False, invent_reference=False, unsupported_citation=None):
         self.calls = []
         self.fail = fail
         self.invent_reference = invent_reference
+        self.unsupported_citation = unsupported_citation
 
     def generate_structured(self, prompt, response_schema, system_prompt="", fallback_data=None):
         self.calls.append((prompt, response_schema, system_prompt, fallback_data))
         if self.fail:
             raise RuntimeError("OpenRouter quota error")
-        dossier = json.loads(prompt.split("LIVE TRIAL DOSSIER (contains no Ground Truth):\n", 1)[1])
+        if "LIVE TRIAL DOSSIER (contains no Ground Truth):\n" in prompt:
+            dossier = json.loads(prompt.split("LIVE TRIAL DOSSIER (contains no Ground Truth):\n", 1)[1])
+        else:
+            initial_prompt = self.calls[0][0]
+            dossier = json.loads(initial_prompt.split("LIVE TRIAL DOSSIER (contains no Ground Truth):\n", 1)[1])
         case = dossier["original_case_record"]
-        citation = dossier["allowed_citations"][0]
-        ref = "PW-88" if self.invent_reference else "PW-1"
+        citation = dossier["research_citations"][0] if dossier["research_citations"] else dossier["verified_charges"][0]["charge_key"]
+        ref = "PW-88" if self.invent_reference and len(self.calls) == 1 else "PW-1"
         return response_schema.model_validate({
             "case_title": "model-generated title is overwritten",
             "date_of_decision": "1900-01-01",
@@ -132,7 +137,7 @@ class JudgeLLMMock:
             "findings_per_charge": {citation: "NOT PROVED"},
             "final_decision": "ACQUITTAL",
             "reasons": "The record and its stated gaps are weighed without assuming facts not supplied.",
-            "legal_citations": [citation],
+            "legal_citations": [self.unsupported_citation or citation],
         })
 
 
@@ -193,10 +198,50 @@ def test_judge_rejects_ground_truth_before_llm_call():
 def test_judge_rejects_invented_evidence_identifier():
     case, prosecution, defense, evidence, conflicts, legal = make_record()
     mock = JudgeLLMMock(invent_reference=True)
-    with pytest.raises(ValueError, match="identifier absent from the record"):
-        JudgeAgent(llm_service=mock).adjudicate(
-            case, prosecution, defense, evidence, conflicts, prosecution_legal_research=legal
-        )
+    result = JudgeAgent(llm_service=mock).adjudicate(
+        case, prosecution, defense, evidence, conflicts, prosecution_legal_research=legal
+    )
+    assert result.final_decision == "ACQUITTAL"
+    assert len(mock.calls) == 2
+    assert "LIVE TRIAL DOSSIER" not in mock.calls[1][0]
+    assert "identifier absent from the record" in mock.calls[1][0]
+
+
+def test_charge_reference_is_separate_from_retrieved_statutory_text():
+    case, prosecution, defense, evidence, conflicts, _ = make_record()
+    mock = JudgeLLMMock()
+    judgment = JudgeAgent(llm_service=mock).adjudicate(case, prosecution, defense, evidence, conflicts)
+    dossier = json.loads(mock.calls[0][0].split("LIVE TRIAL DOSSIER (contains no Ground Truth):\n", 1)[1])
+    assert dossier["research_citations"] == []
+    assert len(dossier["verified_charges"]) == 1
+    assert "statutory text" in mock.calls[0][0]
+    assert judgment.final_decision == "ACQUITTAL"
+
+
+def test_procedural_history_and_other_accused_charges_are_not_judge_scope():
+    case, prosecution, defense, evidence, conflicts, _ = make_record()
+    charges = list(case.charges) + [
+        Charge(section="Section 201", statute="Indian Penal Code, 1860", description="Other count", accused_name="Co-accused", record_status="other_accused"),
+        Charge(section="Section 379", statute="Indian Penal Code, 1860", description="Prior acquittal", accused_name="Example", record_status="procedural_history"),
+    ]
+    case = case.model_copy(update={"charges": charges, "decision_subject": "Example"})
+    mock = JudgeLLMMock()
+    JudgeAgent(llm_service=mock).adjudicate(case, prosecution, defense, evidence, conflicts)
+    prompt = mock.calls[0][0]
+    assert "Indian Penal Code, 1860, Section 201" not in prompt.split("LIVE TRIAL DOSSIER", 1)[1]
+    assert "Indian Penal Code, 1860, Section 379" not in prompt.split("LIVE TRIAL DOSSIER", 1)[1]
+
+
+def test_unsupported_citation_correction_does_not_reintroduce_full_dossier():
+    case, prosecution, defense, evidence, conflicts, legal = make_record()
+    mock = JudgeLLMMock(unsupported_citation="Indian Penal Code, 1860 Section 201")
+    with pytest.raises(ValueError, match="after 3 attempts"):
+        JudgeAgent(llm_service=mock).adjudicate(case, prosecution, defense, evidence, conflicts, prosecution_legal_research=legal)
+    assert len(mock.calls) == 3
+    for prompt, *_ in mock.calls[1:]:
+        assert "LIVE TRIAL DOSSIER" not in prompt
+        assert "Remove unsupported citations" in prompt
+        assert "Indian Penal Code, 1860 Section 201" in prompt
 
 
 def test_judge_surfaces_provider_failure_without_fabricating_judgment():

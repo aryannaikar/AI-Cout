@@ -1,0 +1,58 @@
+{
+  "judgment_id": "JUDG-up_40e2773db758",
+  "case_title": "Sd. Shabuddin v. The State of Telangana",
+  "presiding_court": "Supreme Court of India",
+  "date_of_decision": "2026-11-13",
+  "case_background": "The case originates from FIR No. 344 of 2005 registered at Mills Colony Police Station, Warangal, alleging that Moulana murdered M. Narsaiah, concealed the body, and took cash, a motorcycle, and a mobile phone. The prosecution further alleged that Sd. Shabuddin assisted Moulana in disposing of the body for an agreed payment of I30,000. I25,000 was recovered from Shabuddin's house. The trial court acquitted both accused under Sections 302, 201, and 379 IPC but convicted them under Section 411 IPC. The High Court reduced the sentence under Section 411 IPC from three years to one year.",
+  "issues_for_determination": [
+    "Whether the prosecution has proved beyond reasonable doubt that the recovered money was stolen property belonging to the deceased.",
+    "Whether the prosecution has proved beyond reasonable doubt that Shabuddin had knowledge or reason to believe the money was stolen.",
+    "Whether the conviction under Section 411 IPC can be sustained when the accused were acquitted of theft under Section 379 IPC."
+  ],
+  "applicable_law": [
+    "Constitution of India, Article 20",
+    "Constitution of India, Article 21"
+  ],
+  "evidence_assessment": "The prosecution relied on the recovery of I25,000 from Shabuddin's house (Material Object No. 3) and the testimony of PW-30, the Investigating Officer, who testified regarding the recovery. The FIR (Exhibit P-35) was also marked. The defense highlighted the absence of independent civilian witnesses during the recovery and the lack of evidence connecting the recovered money to the alleged stolen amount.",
+  "witness_assessment": "PW-30, the Investigating Officer, testified about the recovery of I25,000 from Shabuddin's house. The defense did not present any witnesses. The reliability of PW-30's testimony is questioned due to the absence of independent civilian witnesses during the recovery.",
+  "prosecution_submissions": "The prosecution argued that the recovery of I25,000 from Shabuddin's house establishes his guilt under Section 411 IPC. They contended that the accused knowingly possessed the stolen property without lawful justification.",
+  "defense_submissions": "The defense argued that the prosecution failed to prove beyond reasonable doubt that the recovered money was stolen property belonging to the deceased. They emphasized the absence of independent civilian witnesses during the recovery and the lack of evidence connecting the money to the alleged theft.",
+  "issue_analyses": [
+    {
+      "issue_number": 1,
+      "issue_statement": "Whether the prosecution has proved beyond reasonable doubt that the recovered money was stolen property belonging to the deceased.",
+      "applicable_law": "Constitution of India, Article 20",
+      "prosecution_submission_summary": "The prosecution asserts that the recovery of I25,000 from Shabuddin's house establishes that the money was stolen property belonging to the deceased.",
+      "defense_submission_summary": "The defense contends that the prosecution failed to prove the connection between the recovered money and the alleged stolen property.",
+      "evidentiary_evaluation": "The prosecution relied on the recovery of I25,000 (Material Object No. 3) and the testimony of PW-30. However, there is no independent evidence linking the recovered money to the alleged stolen property. The absence of independent civilian witnesses during the recovery raises doubts about the reliability of the evidence.",
+      "judicial_finding": "NOT PROVED"
+    },
+    {
+      "issue_number": 2,
+      "issue_statement": "Whether the prosecution has proved beyond reasonable doubt that Shabuddin had knowledge or reason to believe the money was stolen.",
+      "applicable_law": "Constitution of India, Article 20",
+      "prosecution_submission_summary": "The prosecution argues that the recovery of the money from Shabuddin's house implies his knowledge or reason to believe it was stolen.",
+      "defense_submission_summary": "The defense argues that mere possession of cash does not establish knowledge or reason to believe it was stolen.",
+      "evidentiary_evaluation": "The prosecution failed to provide any evidence beyond the recovery of the money to establish Shabuddin's knowledge or reason to believe it was stolen. The defense's argument that mere possession does not establish such knowledge is valid.",
+      "judicial_finding": "NOT PROVED"
+    },
+    {
+      "issue_number": 3,
+      "issue_statement": "Whether the conviction under Section 411 IPC can be sustained when the accused were acquitted of theft under Section 379 IPC.",
+      "applicable_law": "Constitution of India, Article 20",
+      "prosecution_submission_summary": "The prosecution did not explicitly address this issue.",
+      "defense_submission_summary": "The defense argues that the acquittal under Section 379 IPC undermines the conviction under Section 411 IPC.",
+      "evidentiary_evaluation": "The acquittal under Section 379 IPC indicates that the prosecution failed to prove the theft of the property. Without proof of theft, the conviction under Section 411 IPC for receiving stolen property cannot be sustained.",
+      "judicial_finding": "NOT PROVED"
+    }
+  ],
+  "findings_per_charge": {
+    "Indian Penal Code, 1860, 411": "NOT PROVED"
+  },
+  "final_decision": "ACQUITTAL",
+  "reasons": "The prosecution failed to prove beyond reasonable doubt that the recovered money was stolen property belonging to the deceased or that Shabuddin had knowledge or reason to believe it was stolen. The absence of independent civilian witnesses during the recovery and the lack of evidence connecting the money to the alleged theft create reasonable doubt. Additionally, the acquittal under Section 379 IPC undermines the conviction under Section 411 IPC.",
+  "legal_citations": [
+    "Constitution of India, Article 20",
+    "Constitution of India, Article 21"
+  ]
+}

@@ -164,20 +164,20 @@ def prosecutor_legal_research_node(state: CourtState) -> dict[str, Any]:
             raise ValueError("Prosecution legal research requires case_analysis.")
 
         regime = detect_case_legal_regime(state.case_analysis)
-        is_historical = regime["is_historical"]
-
-        # Derive statutory query
+        # Retain the charge as extracted. LegalResearchAgent applies the case
+        # regime at retrieval time and will flag a source gap rather than
+        # relabelling a modern provision as historical law.
         if state.case_analysis.charges:
-            ch = state.case_analysis.charges[0]
-            statute_name = ch.statute
-            if is_historical and "bns" in statute_name.lower():
-                statute_name = "Indian Penal Code, 1860"
-            query = f"What constitutes {ch.description or 'offence'} under {statute_name} Section {ch.section}?"
+            charges = "; ".join(
+                f"{charge.statute} {charge.section}: {charge.description} (accused: {charge.accused_name})"
+                for charge in state.case_analysis.charges
+            )
+            query = f"Statutory ingredients, explanations, and proof requirements for: {charges}"
         else:
             query = get_prosecutor_legal_research_query(state.case_analysis)
 
         agent = LegalResearchAgent(side="prosecution")
-        res = agent.research(question=query, is_historical=is_historical)
+        res = agent.research(question=query, case=state.case_analysis, regime=regime)
 
         return {
             "prosecution_legal_research": res,
@@ -328,11 +328,9 @@ def defense_legal_research_node(state: CourtState) -> dict[str, Any]:
     start = datetime.now().isoformat()
     try:
         regime = detect_case_legal_regime(state.case_analysis)
-        is_historical = regime["is_historical"]
-
         query = get_defense_legal_research_query(state.case_analysis)
         agent = LegalResearchAgent(side="defense")
-        res = agent.research(question=query, is_historical=is_historical)
+        res = agent.research(question=query, case=state.case_analysis, regime=regime)
 
         return {
             "defense_legal_research": res,

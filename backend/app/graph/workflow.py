@@ -186,13 +186,7 @@ class CourtWorkflow:
 
         elapsed = time.perf_counter() - start_time
 
-        case_id = "CASE-001"
-        if final_state.case_analysis and final_state.case_analysis.case_id:
-            case_id = final_state.case_analysis.case_id
-        elif isinstance(case_packet, (str, Path)):
-            stem = Path(str(case_packet)).stem.replace("_Case_Packet", "")
-            if stem:
-                case_id = stem
+        case_id = _workflow_case_id(case_packet, final_state.case_analysis)
 
         agent_statuses = {}
         for entry in final_state.execution_log:
@@ -316,13 +310,7 @@ class CourtWorkflow:
         judgment = accumulated_state.get("judgment")
         case_analysis = accumulated_state.get("case_analysis")
 
-        case_id = "CASE-001"
-        if case_analysis and case_analysis.case_id:
-            case_id = case_analysis.case_id
-        elif isinstance(case_packet, (str, Path)):
-            stem = Path(str(case_packet)).stem.replace("_Case_Packet", "")
-            if stem:
-                case_id = stem
+        case_id = _workflow_case_id(case_packet, case_analysis)
 
         agent_statuses = {}
         for entry in execution_log_entries:
@@ -574,6 +562,11 @@ def _format_agent_payload(node_name: str, update: dict[str, Any]) -> dict[str, A
     elif node_name == "judge":
         jd = update.get("judgment")
         if jd:
+            # Include the complete, structured judgment in the final-agent event.
+            # The browser can therefore enable the final-judgment and comparison
+            # controls as soon as the judge has rendered a decision, rather than
+            # waiting for the terminal SSE event to be processed.
+            payload["judgment"] = jd.model_dump() if hasattr(jd, "model_dump") else jd
             payload["summary"] = f"VERDICT: {jd.final_decision}. Ratio Decidendi: {jd.reasons[:250]}..."
             payload["decision"] = jd.final_decision
             payload["findings"] = jd.findings_per_charge
@@ -586,6 +579,19 @@ def _format_agent_payload(node_name: str, update: dict[str, Any]) -> dict[str, A
             payload["message"] = t_arr[-1]["content"]
             payload["active_issue"] = update.get("active_issue") or "Courtroom Debate"
     return payload
+
+
+def _workflow_case_id(case_packet: Union[str, Path, dict[str, Any]], case_analysis: Any) -> str:
+    """Keep uploaded-case IDs stable across persistence, SSE, and API lookups."""
+    if isinstance(case_packet, (str, Path)):
+        stem = Path(str(case_packet)).stem
+        if stem.endswith("_Case_Packet"):
+            stem = stem[:-len("_Case_Packet")]
+        if stem.startswith("up_"):
+            return stem
+    if case_analysis and case_analysis.case_id and case_analysis.case_id != "CASE-001":
+        return case_analysis.case_id
+    return "CASE-001"
 
 
 def run_court(

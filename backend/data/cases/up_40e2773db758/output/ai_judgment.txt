@@ -1,0 +1,82 @@
+================================================================================
+IN THE SUPREME COURT OF INDIA
+Case: Sd. Shabuddin v. The State of Telangana
+Judgment ID: JUDG-up_40e2773db758
+Date of Decision: 2026-11-13
+================================================================================
+
+SECTION 1: CASE BACKGROUND & PROSECUTION ORIGIN
+--------------------------------------------------------------------------------
+The case originates from FIR No. 344 of 2005 registered at Mills Colony Police Station, Warangal, alleging that Moulana murdered M. Narsaiah, concealed the body, and took cash, a motorcycle, and a mobile phone. The prosecution further alleged that Sd. Shabuddin assisted Moulana in disposing of the body for an agreed payment of I30,000. I25,000 was recovered from Shabuddin's house. The trial court acquitted both accused under Sections 302, 201, and 379 IPC but convicted them under Section 411 IPC. The High Court reduced the sentence under Section 411 IPC from three years to one year.
+
+SECTION 2: POINTS FOR DETERMINATION
+--------------------------------------------------------------------------------
+1. Whether the prosecution has proved beyond reasonable doubt that the recovered money was stolen property belonging to the deceased.
+2. Whether the prosecution has proved beyond reasonable doubt that Shabuddin had knowledge or reason to believe the money was stolen.
+3. Whether the conviction under Section 411 IPC can be sustained when the accused were acquitted of theft under Section 379 IPC.
+
+SECTION 3: APPLICABLE STATUTORY LAW & CONSTITUTIONAL PROVISIONS
+--------------------------------------------------------------------------------
+- Constitution of India, Article 20
+- Constitution of India, Article 21
+
+SECTION 4: JUDICIAL APPRAISAL OF DOCUMENTARY & ELECTRONIC EXHIBITS
+--------------------------------------------------------------------------------
+The prosecution relied on the recovery of I25,000 from Shabuddin's house (Material Object No. 3) and the testimony of PW-30, the Investigating Officer, who testified regarding the recovery. The FIR (Exhibit P-35) was also marked. The defense highlighted the absence of independent civilian witnesses during the recovery and the lack of evidence connecting the recovered money to the alleged stolen amount.
+
+SECTION 5: CREDIBILITY ANALYSIS OF ORAL WITNESS TESTIMONY
+--------------------------------------------------------------------------------
+PW-30, the Investigating Officer, testified about the recovery of I25,000 from Shabuddin's house. The defense did not present any witnesses. The reliability of PW-30's testimony is questioned due to the absence of independent civilian witnesses during the recovery.
+
+SECTION 6: SUBMISSIONS ADVANCED BY THE PROSECUTION
+--------------------------------------------------------------------------------
+The prosecution argued that the recovery of I25,000 from Shabuddin's house establishes his guilt under Section 411 IPC. They contended that the accused knowingly possessed the stolen property without lawful justification.
+
+SECTION 7: SUBMISSIONS ADVANCED BY THE DEFENSE
+--------------------------------------------------------------------------------
+The defense argued that the prosecution failed to prove beyond reasonable doubt that the recovered money was stolen property belonging to the deceased. They emphasized the absence of independent civilian witnesses during the recovery and the lack of evidence connecting the money to the alleged theft.
+
+SECTION 8: ISSUE-BY-ISSUE JUDICIAL DETERMINATION
+--------------------------------------------------------------------------------
+Issue #1: Whether the prosecution has proved beyond reasonable doubt that the recovered money was stolen property belonging to the deceased.
+  Governing Law: Constitution of India, Article 20
+  Prosecution Case: The prosecution asserts that the recovery of I25,000 from Shabuddin's house establishes that the money was stolen property belonging to the deceased.
+  Defense Plea: The defense contends that the prosecution failed to prove the connection between the recovered money and the alleged stolen property.
+  Evidentiary Analysis: The prosecution relied on the recovery of I25,000 (Material Object No. 3) and the testimony of PW-30. However, there is no independent evidence linking the recovered money to the alleged stolen property. The absence of independent civilian witnesses during the recovery raises doubts about the reliability of the evidence.
+  Finding: NOT PROVED
+
+Issue #2: Whether the prosecution has proved beyond reasonable doubt that Shabuddin had knowledge or reason to believe the money was stolen.
+  Governing Law: Constitution of India, Article 20
+  Prosecution Case: The prosecution argues that the recovery of the money from Shabuddin's house implies his knowledge or reason to believe it was stolen.
+  Defense Plea: The defense argues that mere possession of cash does not establish knowledge or reason to believe it was stolen.
+  Evidentiary Analysis: The prosecution failed to provide any evidence beyond the recovery of the money to establish Shabuddin's knowledge or reason to believe it was stolen. The defense's argument that mere possession does not establish such knowledge is valid.
+  Finding: NOT PROVED
+
+Issue #3: Whether the conviction under Section 411 IPC can be sustained when the accused were acquitted of theft under Section 379 IPC.
+  Governing Law: Constitution of India, Article 20
+  Prosecution Case: The prosecution did not explicitly address this issue.
+  Defense Plea: The defense argues that the acquittal under Section 379 IPC undermines the conviction under Section 411 IPC.
+  Evidentiary Analysis: The acquittal under Section 379 IPC indicates that the prosecution failed to prove the theft of the property. Without proof of theft, the conviction under Section 411 IPC for receiving stolen property cannot be sustained.
+  Finding: NOT PROVED
+
+SECTION 9: FINDINGS ON EACH STATUTORY CHARGE
+--------------------------------------------------------------------------------
+- Indian Penal Code, 1860, 411: NOT PROVED
+
+SECTION 10: OPERATIVE ORDER & FINAL DECISION
+--------------------------------------------------------------------------------
+VERDICT: ACQUITTAL
+
+SECTION 11: RATIO DECIDENDI & DETAILED JUDICIAL REASONING
+--------------------------------------------------------------------------------
+The prosecution failed to prove beyond reasonable doubt that the recovered money was stolen property belonging to the deceased or that Shabuddin had knowledge or reason to believe it was stolen. The absence of independent civilian witnesses during the recovery and the lack of evidence connecting the money to the alleged theft create reasonable doubt. Additionally, the acquittal under Section 379 IPC undermines the conviction under Section 411 IPC.
+
+SECTION 12: STATUTORY CITATIONS & PRECEDENTS
+--------------------------------------------------------------------------------
+- Constitution of India, Article 20
+- Constitution of India, Article 21
+
+================================================================================
+Pronounced in Open Simulated Court by Presiding Judicial Bench.
+AI Court of India — Autonomous Judicial Reasoning Engine
+================================================================================

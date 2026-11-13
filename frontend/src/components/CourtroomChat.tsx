@@ -201,7 +201,7 @@ export const CourtroomChat: React.FC<CourtroomChatProps> = ({
               fontWeight: 800,
             }}
           >
-            JUDGMENT PRONOUNCED
+            FINAL AI JUDGMENT
           </h2>
 
           <div
@@ -224,7 +224,7 @@ export const CourtroomChat: React.FC<CourtroomChatProps> = ({
               letterSpacing: '0.05em',
             }}
           >
-            {judgment.final_decision || 'VERDICT REACHED'}
+            {judgment.final_decision}
           </div>
 
           <p
@@ -271,7 +271,7 @@ export const CourtroomChat: React.FC<CourtroomChatProps> = ({
               <span>VIEW JUDGMENT</span>
             </button>
 
-            {onOpenComparison && (
+            {judgment && onOpenComparison && (
               <button
                 onClick={onOpenComparison}
                 style={{
@@ -307,6 +307,12 @@ export const CourtroomChat: React.FC<CourtroomChatProps> = ({
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {!judgment && !isStreaming && messages.some((message) => message.agent === 'judge') && (
+        <div style={{ alignSelf: 'center', width: '100%', maxWidth: '560px', padding: '18px 22px', borderRadius: '12px', border: '1px solid rgba(248, 113, 113, 0.45)', background: 'rgba(127, 29, 29, 0.16)', color: '#FCA5A5', textAlign: 'center' }}>
+          The judge did not return a final judgment. Review the error above and rerun the case after resolving it.
         </div>
       )}
 

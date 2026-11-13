@@ -350,8 +350,8 @@ export function formatConflict(payload: any): FormattedChatMessage[] {
 }
 
 export function formatJudge(payload: any): FormattedChatMessage[] {
-  const decision = (payload.decision || 'JUDGMENT PRONOUNCED').toUpperCase();
-  const reasons = payload.reasons || payload.summary || '';
+  const decision = (payload.decision || payload.judgment?.final_decision || 'JUDGMENT PRONOUNCED').toUpperCase();
+  const reasons = payload.reasons || payload.judgment?.reasons || payload.summary || '';
   const issues = Array.isArray(payload.issues) ? payload.issues : [];
   const findings = payload.findings && typeof payload.findings === 'object' ? payload.findings : {};
 
@@ -372,7 +372,7 @@ export function formatJudge(payload: any): FormattedChatMessage[] {
       reasons.length > 350 ? `${reasons.slice(0, 350)}...` : reasons,
     ].filter(Boolean),
     substantiveItems: findingsList.slice(0, 3),
-    isJudge: true,
+    isJudge: Boolean(payload.judgment || payload.decision),
     metadataBadge: decision,
   }];
 }

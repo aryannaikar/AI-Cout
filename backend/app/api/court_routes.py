@@ -282,3 +282,14 @@ async def download_judgment_artifact(case_id: str, format_type: str):
         )
 
     return FileResponse(path=str(target_path), media_type=media_type, filename=filename)
+
+
+@router.get("/cases/{case_id}/judgment")
+async def get_persisted_judgment(case_id: str):
+    """Return the actual persisted AI judgment for a completed case."""
+    safe_id = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in case_id)
+    backend_dir = Path(__file__).resolve().parents[2]
+    target_path = backend_dir / "data" / "cases" / safe_id / "output" / "ai_judgment.json"
+    if not target_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No persisted AI judgment found for case '{case_id}'.")
+    return JSONResponse(content=json.loads(target_path.read_text(encoding="utf-8")))

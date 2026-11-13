@@ -410,6 +410,8 @@ class OpenRouterLLMClient(BaseLLMClient):
             return "live_prosecutor"
         if "livedefense" in combined or "defence counsel" in combined:
             return "live_defense"
+        if "independent judicial bench" in combined or "you are the judge" in combined or "judgeagent" in combined:
+            return "judge"
         if "prosecut" in combined:
             return "prosecutor"
         if "defen" in combined:

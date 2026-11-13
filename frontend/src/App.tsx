@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import type { 
   AgentMessage, 
@@ -11,6 +11,13 @@ import { CourtroomChat } from './components/CourtroomChat';
 import { ResearchChamber } from './components/ResearchChamber';
 import { JudgmentModal } from './components/JudgmentModal';
 import { ComparisonModal } from './components/ComparisonModal';
+
+const readPersistedJudgment = async (caseId: string): Promise<Judgment | null> => {
+  const response = await fetch(`/api/court/cases/${encodeURIComponent(caseId)}/judgment`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Could not load persisted judgment (HTTP ${response.status}).`);
+  return response.json();
+};
 
 export function App() {
   const [uploadedCase, setUploadedCase] = useState<UploadedCaseInfo | null>(null);
@@ -28,6 +35,7 @@ export function App() {
     if (isStreaming) return;
     setUploadedCase(null);
     setResolvedCaseId(null);
+    sessionStorage.removeItem('ai-court-case-id');
     setMessages([]);
     setCurrentAgent(null);
     setJudgment(null);
@@ -116,6 +124,13 @@ export function App() {
     } else if (type === 'agent_started') {
       setCurrentAgent(data.agent);
     } else if (type === 'agent_message') {
+      // The terminal SSE event normally supplies the judgment.  Preserve the
+      // same result from the judge's own event as well, so the final-judgment
+      // and comparison actions do not disappear if that terminal event is
+      // delayed or its stream closes after the final agent message.
+      if (data.agent === 'judge' && data.payload?.judgment) {
+        setJudgment(data.payload.judgment as Judgment);
+      }
       const newMsg: AgentMessage = {
         id: `${data.agent}_${Date.now()}`,
         agent: data.agent,
@@ -135,9 +150,21 @@ export function App() {
     } else if (type === 'court_completed') {
       if (data.judgment) {
         setJudgment(data.judgment);
+      } else {
+        const judgeFailure = data.report?.errors?.find((item: any) => item.agent === 'judge');
+        if (judgeFailure?.error) {
+          setCourtError(`The judge could not render a final judgment: ${judgeFailure.error}`);
+        } else if (data.status === 'failed') {
+          setCourtError('The court session ended without a final judgment. Check the backend logs for the failed agent.');
+        }
       }
       if (data.case_id) {
         setResolvedCaseId(data.case_id);
+        if (!data.judgment) {
+          void readPersistedJudgment(data.case_id).then((savedJudgment) => {
+            if (savedJudgment) setJudgment(savedJudgment);
+          }).catch((error) => console.error('Persisted judgment lookup failed:', error));
+        }
       }
       setIsStreaming(false);
       setCurrentAgent(null);
@@ -181,6 +208,20 @@ export function App() {
 
   const activeCaseId = resolvedCaseId || uploadedCase?.upload_id || 'CASE-001';
 
+  useEffect(() => {
+    const savedCaseId = sessionStorage.getItem('ai-court-case-id');
+    if (savedCaseId) {
+      setResolvedCaseId(savedCaseId);
+      void readPersistedJudgment(savedCaseId)
+        .then((savedJudgment) => { if (savedJudgment) setJudgment(savedJudgment); })
+        .catch((error) => console.error('Persisted judgment lookup failed:', error));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (resolvedCaseId) sessionStorage.setItem('ai-court-case-id', resolvedCaseId);
+  }, [resolvedCaseId]);
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-court)' }}>
       
@@ -216,7 +257,9 @@ export function App() {
                 currentAgent={currentAgent}
                 isStreaming={isStreaming}
                 judgment={judgment}
-                onOpenJudgment={() => setIsJudgmentModalOpen(true)}
+                onOpenJudgment={() => {
+                  if (judgment) setIsJudgmentModalOpen(true);
+                }}
                 onOpenComparison={() => setIsComparisonModalOpen(true)}
                 caseTitle={uploadedCase?.filename}
               />

@@ -4,7 +4,7 @@ Pydantic data models for structured case representation extracted from Case_Pack
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -28,6 +28,10 @@ class Charge(BaseModel):
     elements_alleged: list[str] = Field(
         default_factory=list,
         description="Specific statutory elements alleged by the prosecution to have occurred.",
+    )
+    record_status: Literal["current", "procedural_history", "other_accused", "uncertain"] = Field(
+        default="current",
+        description="Whether charge is currently before the court for accused_name or appears only in history/against another accused.",
     )
 
 
@@ -93,6 +97,14 @@ class StructuredCase(BaseModel):
     procedural_history: Optional[str] = Field(
         default=None,
         description="Summary of FIR registration, charge-sheet, committal, or prior orders.",
+    )
+    proceeding_type: Optional[str] = Field(
+        default=None,
+        description="Current proceeding, if stated: trial, appeal, revision, bail, or other. Never infer from a cited prior order alone.",
+    )
+    decision_subject: Optional[str] = Field(
+        default=None,
+        description="Accused/appellant whose liability is currently for decision, if explicitly identifiable. None means charge scope is unresolved.",
     )
     legal_issues: list[str] = Field(
         default_factory=list,

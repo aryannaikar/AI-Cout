@@ -423,7 +423,7 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
         )}
 
         {/* Special Judge Pronouncement Call to Action */}
-        {isJudge && onOpenJudgment && (
+        {isJudge && onOpenJudgment && payload?.judgment && (
           <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
             <button
               onClick={onOpenJudgment}
