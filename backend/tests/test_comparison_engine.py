@@ -7,6 +7,7 @@ report generation, and ground truth isolation.
 from pathlib import Path
 import pytest
 from app.comparison.service import ComparisonService
+from app.comparison.errors import CaseIdentityMismatchError
 from app.comparison.schemas import (
     ComparisonReport, ComparisonScores, NormalizedCharge, NormalizedFact,
     NormalizedJudgment, NormalizedEvidenceItem, NormalizedReasoning,
@@ -222,6 +223,45 @@ def test_reasoning_comparison_uses_source_derived_propositions():
     assert result.is_assessable is True
     assert result.score == 100
     assert result.theme_evaluations[0].source_evidence == proposition
+
+
+def test_case_identity_validation_reports_conflicting_case_numbers_without_blocking():
+    service = ComparisonService()
+    ai = _judgment(
+        case_title="State v. Ramesh Kumar", case_number="Criminal Appeal No. 11/2020",
+        presiding_court="High Court of Delhi",
+    )
+    real = _judgment(
+        case_title="State v. Ramesh Kumar", case_number="Criminal Appeal No. 12/2020",
+        presiding_court="High Court of Delhi",
+    )
+    result = service._validate_case_identity(ai, real)
+    assert result["status"] == "limited_metadata"
+    assert "case_number" in result["note"]
+
+
+def test_case_identity_validation_does_not_reject_title_only_difference():
+    service = ComparisonService()
+    ai = _judgment(case_title="State v. Ramesh Kumar")
+    real = _judgment(case_title="State v. Ram Kumar")
+    result = service._validate_case_identity(ai, real)
+    assert result["status"] in {"limited_metadata", "verified"}
+
+
+def test_case_identity_validation_does_not_reject_weak_metadata_conflicts():
+    """Caption/court extraction differences must not block a valid upload."""
+    service = ComparisonService()
+    ai = _judgment(
+        case_title="Sd. Shabuddin v. State of Telangana",
+        presiding_court="Supreme Court of India",
+    )
+    real = _judgment(
+        case_title="State of Telangana v. Sk. Shabuddin",
+        presiding_court="High Court for the State of Telangana",
+    )
+    result = service._validate_case_identity(ai, real)
+    assert result["status"] == "limited_metadata"
+    assert "court" in result["note"]
 
 
 def test_compare_post_trial_with_case_id():

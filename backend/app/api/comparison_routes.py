@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from app.comparison.errors import (
     AIJudgmentNotFoundError,
+    CaseIdentityMismatchError,
     ComparisonError,
     InvalidJudgmentFormatError,
     RealJudgmentNotFoundError,
@@ -72,6 +73,8 @@ async def post_trial_compare(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except InvalidJudgmentFormatError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except CaseIdentityMismatchError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except ComparisonError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     except Exception as e:
@@ -109,6 +112,8 @@ async def manual_standalone_compare(
         _reports_by_case_id[report.case_id] = report
         return report
     except InvalidJudgmentFormatError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except CaseIdentityMismatchError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     except Exception as e:
         logger.exception("Unexpected error during manual comparison: %s", e)

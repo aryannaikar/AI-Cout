@@ -7,6 +7,7 @@ between AI Court judgments and authoritative Real Court judgments.
 from app.comparison.comparator import JudgmentComparator
 from app.comparison.errors import (
     AIJudgmentNotFoundError,
+    CaseIdentityMismatchError,
     ComparisonError,
     GroundTruthSecurityViolation,
     InvalidJudgmentFormatError,
@@ -40,6 +41,7 @@ __all__ = [
     "OperativeVerdict",
     "ComparisonError",
     "AIJudgmentNotFoundError",
+    "CaseIdentityMismatchError",
     "RealJudgmentNotFoundError",
     "InvalidJudgmentFormatError",
     "GroundTruthSecurityViolation",

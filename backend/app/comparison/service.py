@@ -8,20 +8,18 @@ All results are returned in-memory only — no outputs are written to disk.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
 from app.comparison.comparator import JudgmentComparator
-from app.comparison.errors import (
-    AIJudgmentNotFoundError,
-    RealJudgmentNotFoundError,
-)
+from app.comparison.errors import AIJudgmentNotFoundError, RealJudgmentNotFoundError
 from app.comparison.extractor import JudgmentNormalizer
 from app.comparison.loaders import ComparisonDocumentLoader
 from app.comparison.report_generator import ComparisonReportGenerator
-from app.comparison.schemas import ComparisonReport
+from app.comparison.schemas import ComparisonReport, NormalizedJudgment
 from app.comparison.scoring import ScoringEngine
 
 logger = logging.getLogger(__name__)
@@ -41,6 +39,92 @@ class ComparisonService:
     ):
         self.scoring_engine = ScoringEngine(custom_weights=scoring_weights)
 
+    @staticmethod
+    def _identity_tokens(value: Optional[str]) -> set[str]:
+        """Normalize identifiers while removing generic caption and court words."""
+        generic = {
+            "state", "union", "india", "court", "high", "supreme", "criminal",
+            "appeal", "case", "judgment", "accused", "appellant", "respondent",
+        }
+        return {
+            token for token in re.findall(r"[a-z0-9]+", (value or "").lower())
+            if len(token) > 2 and token not in generic
+        }
+
+    @classmethod
+    def _validate_case_identity(
+        cls, ai: NormalizedJudgment, real: NormalizedJudgment
+    ) -> Dict[str, Any]:
+        """Reject only a conflict in a reliable shared case identifier.
+
+        Court names, captions and party labels are frequently abbreviated or
+        inferred differently by the AI judgment and a scanned real judgment.
+        They are useful report metadata, but are not safe enough to deny a
+        comparison request.  A populated case number is the only identifier
+        this generic pipeline can compare deterministically.
+        """
+        checks: List[Dict[str, Any]] = []
+        conflicts: List[str] = []
+
+        def unavailable_placeholder(value: Optional[str]) -> bool:
+            normalized = cls._normalise_identifier(value or "")
+            return normalized in {"", "state", "accusedappellant", "statevaccused", "courtofsessionshighcourt"}
+
+        def add_check(field: str, ai_value: Optional[str], real_value: Optional[str], exact: bool = False) -> None:
+            ai_tokens, real_tokens = cls._identity_tokens(ai_value), cls._identity_tokens(real_value)
+            if unavailable_placeholder(ai_value) or unavailable_placeholder(real_value):
+                checks.append({"field": field, "status": "unavailable"})
+                return
+            overlap = len(ai_tokens & real_tokens) / max(1, len(ai_tokens | real_tokens))
+            matched = cls._normalise_identifier(ai_value) == cls._normalise_identifier(real_value) if exact else overlap >= 0.5
+            checks.append({
+                "field": field, "status": "match" if matched else "conflict",
+                "ai": ai_value, "ground_truth": real_value,
+            })
+            if not matched:
+                conflicts.append(field)
+
+        add_check("case_number", ai.case_number, real.case_number, exact=True)
+        add_check("court", ai.presiding_court, real.presiding_court)
+        add_check("accused_or_appellant", ai.parties.appellant_or_accused, real.parties.appellant_or_accused)
+        add_check("respondent_or_state", ai.parties.respondent_or_state, real.parties.respondent_or_state)
+
+        # Captions are informative only. A title conflict cannot by itself reject
+        # a comparison because formatting and party ordering vary by judgment.
+        ai_title, real_title = cls._identity_tokens(ai.case_title), cls._identity_tokens(real.case_title)
+        title_overlap = len(ai_title & real_title) / max(1, len(ai_title | real_title))
+        title_conflict = bool(ai_title and real_title and title_overlap < 0.25)
+        checks.append({"field": "case_title", "status": "conflict" if title_conflict else "match" if ai_title and real_title else "unavailable", "ai": ai.case_title, "ground_truth": real.case_title})
+
+        # Only treat a case number as a reliable identifier when both sides
+        # contain a substantive docket number. Normalizer fallbacks often
+        # extract years, FIR numbers, or differently formatted references.
+        ai_case_number = cls._normalise_identifier(ai.case_number or "")
+        real_case_number = cls._normalise_identifier(real.case_number or "")
+        has_reliable_case_numbers = bool(ai_case_number and real_case_number)
+        matched = [check["field"] for check in checks if check["status"] == "match"]
+        metadata_conflicts = [check["field"] for check in checks if check["status"] == "conflict"]
+        reliable_match = "case_number" in matched and has_reliable_case_numbers
+        return {
+            "status": "verified" if reliable_match else "limited_metadata",
+            "matched_identifiers": matched,
+            "checks": checks,
+            "note": (
+                "Identity checks are informational and do not block comparison. "
+                + (
+                    "Other metadata differs ("
+                    + ", ".join(metadata_conflicts)
+                    + ") and is shown for review; it did not block comparison because it is not a reliable shared case identifier."
+                    if metadata_conflicts else
+                    "Limited metadata means the comparison proceeded without a reliable shared case identifier."
+                )
+            ),
+        }
+
+    @staticmethod
+    def _normalise_identifier(value: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", value.lower())
+
     def _run_comparison(
         self,
         ai_input: Any,
@@ -55,6 +139,7 @@ class ComparisonService:
         """Shared comparison logic for both modes — purely in-memory."""
         ai_norm = JudgmentNormalizer.normalize_ai_judgment(ai_input)
         real_norm = JudgmentNormalizer.normalize_real_judgment(real_input)
+        identity_validation = self._validate_case_identity(ai_norm, real_norm)
 
         comparator = JudgmentComparator(case_packet_context=packet_text)
         (
@@ -126,6 +211,7 @@ class ComparisonService:
             "case_title": case_title or real_norm.case_title or ai_norm.case_title,
             "presiding_court": presiding_court or real_norm.presiding_court or "Supreme Court of India",
             "date_of_decision": date_of_decision or real_norm.date_of_decision or ai_norm.date_of_decision,
+            "identity_validation": identity_validation,
         }
         if mode == "manual":
             case_info["case_packet_provided"] = packet_text is not None

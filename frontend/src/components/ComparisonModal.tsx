@@ -556,9 +556,60 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
                 </div>
               </div>
 
+              {report.case_information?.identity_validation && (() => {
+                const identity = report.case_information.identity_validation as { status?: string; matched_identifiers?: string[]; note?: string };
+                const verified = identity.status === 'verified';
+                return (
+                  <div style={{ padding: '12px 16px', borderRadius: '8px', background: verified ? 'rgba(16, 185, 129, 0.08)' : 'rgba(251, 191, 36, 0.08)', border: `1px solid ${verified ? 'rgba(16, 185, 129, 0.25)' : 'rgba(251, 191, 36, 0.25)'}`, fontSize: '0.8rem', color: '#CBD5E1' }}>
+                    <strong style={{ color: verified ? '#6EE7B7' : '#FDE68A' }}>CASE IDENTITY: {verified ? 'VERIFIED' : 'LIMITED METADATA'}</strong>
+                    {identity.matched_identifiers?.length ? ` — matched ${identity.matched_identifiers.join(', ')}` : ''}
+                    {identity.note ? ` · ${identity.note}` : ''}
+                  </div>
+                );
+              })()}
+
+              {/* Source-traceable explanation for every core benchmark dimension */}
+              {(() => {
+                const detailReport = report as any;
+                const details = [
+                  ['Verdict Alignment', detailReport.verdict_comparison, report.scores.verdict_alignment],
+                  ['Legal Reasoning Alignment', detailReport.reasoning_comparison, report.scores.reasoning_alignment],
+                  ['Factual Accuracy', detailReport.factual_comparison, report.scores.factual_accuracy],
+                  ['Issue Alignment', detailReport.issue_comparison, report.scores.issue_alignment],
+                  ['Evidence Alignment', detailReport.evidence_comparison, report.scores.evidence_alignment],
+                  ['Charge Alignment', detailReport.charge_comparison, report.scores.charge_alignment],
+                  ['Final Order Alignment', detailReport.final_order_comparison, report.scores.final_order_alignment],
+                ] as const;
+                return (
+                  <div style={{ padding: '18px 20px', borderRadius: '12px', background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                    <h4 style={{ margin: '0 0 12px', fontSize: '0.95rem', color: 'var(--gold-primary)' }}>DIMENSION-BY-DIMENSION EXPLANATION</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {details.map(([label, comparison, score]) => {
+                        const assessable = comparison?.is_assessable !== false;
+                        return (
+                          <div key={label} style={{ padding: '12px', borderRadius: '8px', background: 'rgba(255, 255, 255, 0.03)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '5px' }}>
+                              <strong style={{ color: '#E2E8F0', fontSize: '0.84rem' }}>{label}</strong>
+                              <span style={{ color: assessable ? '#CBD5E1' : '#94A3B8', fontSize: '0.8rem' }}>{assessable ? `${Number(score).toFixed(1)}%` : 'NOT ASSESSABLE'}</span>
+                            </div>
+                            <p style={{ margin: '0 0 6px', color: '#94A3B8', fontSize: '0.8rem' }}>{comparison?.explanation || 'No comparison explanation was returned.'}</p>
+                            {(comparison?.ai_extracted_position || comparison?.ai_final_order || comparison?.ai_verdict) && <div style={{ color: '#CBD5E1', fontSize: '0.76rem' }}><strong>AI:</strong> {comparison.ai_extracted_position || comparison.ai_final_order || comparison.ai_verdict}</div>}
+                            {(comparison?.real_extracted_position || comparison?.real_final_order || comparison?.real_verdict) && <div style={{ color: '#CBD5E1', fontSize: '0.76rem' }}><strong>Ground Truth:</strong> {comparison.real_extracted_position || comparison.real_final_order || comparison.real_verdict}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Factual Correctness & Completeness Breakdown */}
               {report.factual_comparison && (
-                <div
+                (() => {
+                  const factualAssessable = report.factual_comparison.is_assessable !== false;
+                  const precision = report.factual_comparison.correctness_score;
+                  const recall = report.factual_comparison.completeness_score;
+                  return <div
                   style={{
                     padding: '18px 20px',
                     borderRadius: '12px',
@@ -571,21 +622,21 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
                       FACTUAL ACCURACY EVALUATION (PRECISION & RECALL)
                     </h4>
                     <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#34D399' }}>
-                      Composite Score: {report.scores.factual_accuracy.toFixed(1)}%
+                      Composite Score: {factualAssessable ? `${report.scores.factual_accuracy.toFixed(1)}%` : 'Not assessed'}
                     </span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '12px' }}>
                     <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(255, 255, 255, 0.03)' }}>
                       <span style={{ fontSize: '0.72rem', color: '#94A3B8' }}>Factual Correctness (Precision)</span>
-                      <div style={{ fontSize: '1.2rem', fontWeight: 700, color: (report.factual_comparison.correctness_score ?? 100) >= 70 ? '#34D399' : '#F87171' }}>
-                        {(report.factual_comparison.correctness_score ?? 100).toFixed(1)}%
+                      <div style={{ fontSize: '1.2rem', fontWeight: 700, color: !factualAssessable ? '#94A3B8' : (precision ?? 0) >= 70 ? '#34D399' : '#F87171' }}>
+                        {factualAssessable && precision != null ? `${precision.toFixed(1)}%` : 'Not assessed'}
                       </div>
                       <span style={{ fontSize: '0.7rem', color: '#64748B' }}>Verified vs Invented/Unsupported</span>
                     </div>
                     <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(255, 255, 255, 0.03)' }}>
                       <span style={{ fontSize: '0.72rem', color: '#94A3B8' }}>Factual Completeness (Recall)</span>
-                      <div style={{ fontSize: '1.2rem', fontWeight: 700, color: (report.factual_comparison.completeness_score ?? 100) >= 70 ? '#34D399' : '#F87171' }}>
-                        {(report.factual_comparison.completeness_score ?? 100).toFixed(1)}%
+                      <div style={{ fontSize: '1.2rem', fontWeight: 700, color: !factualAssessable ? '#94A3B8' : (recall ?? 0) >= 70 ? '#34D399' : '#F87171' }}>
+                        {factualAssessable && recall != null ? `${recall.toFixed(1)}%` : 'Not assessed'}
                       </div>
                       <span style={{ fontSize: '0.7rem', color: '#64748B' }}>Coverage of authoritative facts</span>
                     </div>
@@ -604,7 +655,8 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
                   <p style={{ margin: 0, fontSize: '0.82rem', color: '#94A3B8' }}>
                     {report.factual_comparison.explanation}
                   </p>
-                </div>
+                </div>;
+                })()
               )}
 
               {/* Major Errors & Historical Mismatches */}

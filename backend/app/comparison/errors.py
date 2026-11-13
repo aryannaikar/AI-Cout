@@ -25,6 +25,11 @@ class InvalidJudgmentFormatError(ComparisonError):
     pass
 
 
+class CaseIdentityMismatchError(ComparisonError):
+    """Raised when the two submitted judgments contain conflicting case identifiers."""
+    pass
+
+
 class GroundTruthSecurityViolation(ComparisonError, PermissionError):
     """Raised when Ground Truth / Real Court Judgment is illegally injected into the courtroom graph."""
     pass
