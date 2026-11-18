@@ -91,11 +91,12 @@ class CaseUnderstandingAgent:
             f"Set the case_id field to '{derived_id}'. Do NOT invent facts or infer a final verdict.\n\n"
             "CRITICAL INSTRUCTIONS:\n"
             "1. Ground all analysis strictly in the provided text. Do NOT introduce electronic record issues (e.g. Section 63 BSA / 65B IEA) unless electronic evidence is actually present in the case packet.\n"
-            "2. Ground charges strictly in the provided text and applicable statute (IPC for pre-2024 / historical cases, BNS for 2024+ cases).\n"
+            "2. Ground charges strictly in the exact statute explicitly named in the text (e.g., IPC 1860, BNS 2023, Railway Property (Unlawful Possession) Act 1966, Arms Act, IT Act). NEVER infer or substitute an Act from a section number alone.\n"
             "3. Extract proceeding_type and decision_subject only when the packet explicitly identifies the current trial, appeal, revision, or named accused/appellant. Keep them null if unclear.\n"
-            "4. Keep charges tied to their named accused and set Charge.record_status: current only for charges whose liability is presently before the court; procedural_history for earlier charges/findings not under current review; other_accused for charges belonging to another accused; uncertain if unclear. In appeals identify the order/count under appeal. Never convert allegations or prior charges into current charges.\n"
-            "5. Identify any missing or uncertain evidentiary items (e.g. absence of independent public witnesses, uncalled witnesses, missing documents) in missing_or_uncertain_info.\n\n"
-            f"Case Packet Text:\n{case_text[:12000]}"
+            "4. If connected proceedings exist (e.g., two Criminal Revisions or Appeals heard together), populate connected_proceedings with each proceeding_id and its distinct accused_or_petitioners. Never merge similarly-named persons (e.g., 'Md. Israful Ansari' vs 'Israfil Ansari').\n"
+            "5. Keep charges tied to their named accused and set Charge.record_status: current only for charges whose liability is presently before the court; procedural_history for earlier charges/findings not under current review; other_accused for charges belonging to another accused; uncertain if unclear. In appeals identify the order/count under appeal. Never convert allegations or prior charges into current charges.\n"
+            "6. Identify any missing or uncertain evidentiary items (e.g. absence of independent public witnesses, uncalled witnesses, missing documents) in missing_or_uncertain_info.\n\n"
+            f"Case Packet Text:\n{case_text[:20000]}"
         )
 
         res = self.llm_service.generate_structured(
@@ -127,37 +128,30 @@ class CaseUnderstandingAgent:
         case_num_match = re.search(r"(?:FIR\s*No\.?|Case\s*No\.?|Sessions\s*Case\s*No\.?)\s*[:\-]?\s*([A-Za-z0-9/\-]+)", text, re.IGNORECASE)
         court_id = case_num_match.group(0).strip() if case_num_match else "FIR No. 102/2024, PS City"
 
-        # Detect charges
+        # Detect charges strictly from explicit Act + Section pairs without inferring Act from section number alone
         charges = []
-        for sec in ["303", "317", "318", "65", "66", "103"]:
-            if f"section {sec}" in text.lower() or f"sec. {sec}" in text.lower() or f"{sec} bns" in text.lower():
-                statute = "Information Technology Act, 2000" if sec in ["65", "66"] else "Bharatiya Nyaya Sanhita, 2023"
-                desc = "Dishonestly receiving or retaining stolen property" if sec == "317" else f"Alleged offence under Section {sec} of {statute}"
-                charges.append({
-                    "section": f"Section {sec}",
-                    "statute": statute,
-                    "description": desc,
-                    "accused_name": "Accused",
-                    "elements_alleged": [f"Commission of acts proscribed under Section {sec}"],
-                })
-
-        if "arms act" in text.lower() or "section 25" in text.lower():
-            charges.append({
-                "section": "Section 25",
-                "statute": "Arms Act, 1959",
-                "description": "Unlawful possession of country-made firearm/ammunition",
-                "accused_name": "Accused",
-                "elements_alleged": ["Conscious possession of firearm", "Absence of valid arms licence"],
-            })
-
-        if not charges:
-            charges.append({
-                "section": "Section 317",
-                "statute": "Bharatiya Nyaya Sanhita, 2023",
-                "description": "Dishonestly receiving or retaining stolen property (Section 317 BNS / IPC 411)",
-                "accused_name": "Accused",
-                "elements_alleged": ["Possession of stolen property", "Knowledge or reason to believe property was stolen"],
-            })
+        explicit_patterns = [
+            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?(?:\([a-z0-9]+\))?)\s*(?:of\s+(?:the\s+)?)?(?:Railway\s+Property\s*\(Unlawful\s+Possession\)\s*Act(?:,\s*1966)?|R\.?P\.?\(?U\.?P\.?\)?\s*Act)", "Railway Property (Unlawful Possession) Act, 1966"),
+            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?)\s*(?:of\s+(?:the\s+)?)?(?:Indian\s+Penal\s+Code(?:,\s*1860)?|IPC)", "Indian Penal Code, 1860"),
+            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?)\s*(?:of\s+(?:the\s+)?)?(?:Bharatiya\s+Nyaya\s+Sanhita(?:,\s*2023)?|BNS)", "Bharatiya Nyaya Sanhita, 2023"),
+            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?)\s*(?:of\s+(?:the\s+)?)?(?:Information\s+Technology\s+Act(?:,\s*2000)?|IT\s+Act)", "Information Technology Act, 2000"),
+            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?)\s*(?:of\s+(?:the\s+)?)?(?:Arms\s+Act(?:,\s*1959)?)", "Arms Act, 1959"),
+        ]
+        seen_charges: set[tuple[str, str]] = set()
+        for pattern, statute_name in explicit_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                sec_val = f"Section {match.group(1)}"
+                key = (statute_name.casefold(), sec_val.casefold())
+                if key not in seen_charges:
+                    seen_charges.add(key)
+                    charges.append({
+                        "section": sec_val,
+                        "statute": statute_name,
+                        "description": f"Alleged offence under {sec_val} of {statute_name}",
+                        "accused_name": "Accused",
+                        "elements_alleged": [f"Commission of acts proscribed under {sec_val} ({statute_name})"],
+                        "record_status": "current",
+                    })
 
         # Detect witnesses
         witnesses = []

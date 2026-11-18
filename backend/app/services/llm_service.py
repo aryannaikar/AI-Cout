@@ -30,11 +30,13 @@ class LLMService:
         provider: Optional[str] = None,
         model_name: Optional[str] = None,
         api_key: Optional[str] = None,
+        agent_name: str = "unknown",
     ):
         self.provider = (provider or LLMConfig.provider()).lower()
         self.model_name = model_name
         self.api_key = api_key
-        logger.info("Initialized LLMService wrapping centralized provider: '%s'", self.provider)
+        self.agent_name = agent_name
+        logger.info("Initialized LLMService wrapping centralized provider: '%s' (agent=%s)", self.provider, self.agent_name)
 
     def get_client(self):
         """Obtain underlying client from LLMProvider."""
@@ -43,6 +45,8 @@ class LLMService:
     def generate_text(self, prompt: str, system_prompt: str = "") -> str:
         """Generate unstructured text completion via configured LLM provider."""
         client = self.get_client()
+        if hasattr(client, "_execute_with_failover"):
+            return client.generate_text(prompt=prompt, system_prompt=system_prompt, agent_name=self.agent_name)
         return client.generate_text(prompt=prompt, system_prompt=system_prompt)
 
     def generate_structured(
@@ -56,6 +60,14 @@ class LLMService:
         Generate structured output adhering to a Pydantic schema via configured LLM provider.
         """
         client = self.get_client()
+        if hasattr(client, "_execute_with_failover"):
+            return client.generate_structured(
+                prompt=prompt,
+                response_schema=response_schema,
+                system_prompt=system_prompt,
+                fallback_data=fallback_data,
+                agent_name=self.agent_name,
+            )
         return client.generate_structured(
             prompt=prompt,
             response_schema=response_schema,

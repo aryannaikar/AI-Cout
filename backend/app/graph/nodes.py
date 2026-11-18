@@ -167,10 +167,15 @@ def prosecutor_legal_research_node(state: CourtState) -> dict[str, Any]:
         # Retain the charge as extracted. LegalResearchAgent applies the case
         # regime at retrieval time and will flag a source gap rather than
         # relabelling a modern provision as historical law.
-        if state.case_analysis.charges:
+        active_charges = (
+            state.case_analysis.current_charges()
+            if hasattr(state.case_analysis, "current_charges")
+            else [c for c in state.case_analysis.charges if c.record_status == "current"]
+        )
+        if active_charges:
             charges = "; ".join(
                 f"{charge.statute} {charge.section}: {charge.description} (accused: {charge.accused_name})"
-                for charge in state.case_analysis.charges
+                for charge in active_charges
             )
             query = f"Statutory ingredients, explanations, and proof requirements for: {charges}"
         else:
@@ -192,8 +197,22 @@ def prosecutor_legal_research_node(state: CourtState) -> dict[str, Any]:
         }
     except Exception as e:
         logger.warning("Recoverable error in prosecutor_legal_research_node: %s", e)
+        from uuid import uuid4
+        from app.models.legal_models import LegalResearchResult
+        failed_result = LegalResearchResult(
+            research_id=f"RES-LEG-{uuid4().hex[:8].upper()}",
+            side="prosecution",
+            status="failed",
+            error_message=str(e),
+            question="Prosecution statutory research",
+            findings=f"Legal research failed/unavailable: {e}",
+            applicable_provisions=[],
+            citations=[],
+            source_pages=[],
+            reasoning_relevance="Statutory legal research could not be executed; no statutory text was retrieved.",
+        )
         return {
-            "prosecution_legal_research": None,
+            "prosecution_legal_research": failed_result,
             "errors": [
                 CourtError(
                     agent="prosecutor_legal_research",
@@ -224,9 +243,19 @@ def prosecutor_web_research_node(state: CourtState) -> dict[str, Any]:
         regime = detect_case_legal_regime(state.case_analysis)
         is_historical = regime["is_historical"]
 
-        if state.case_analysis.charges:
-            ch = state.case_analysis.charges[0]
-            statute_name = "Indian Penal Code" if is_historical else ch.statute
+        active_charges = (
+            state.case_analysis.current_charges()
+            if hasattr(state.case_analysis, "current_charges")
+            else [c for c in state.case_analysis.charges if c.record_status == "current"]
+        )
+        target_charges = active_charges or state.case_analysis.charges
+        if target_charges:
+            ch = target_charges[0]
+            statute_name = ch.statute
+            if is_historical and (
+                "bns" in statute_name.lower() or "bharatiya nyaya sanhita" in statute_name.lower()
+            ):
+                statute_name = "Indian Penal Code"
             query = f"Supreme Court of India precedent on ingredients of {ch.section} {statute_name}"
         else:
             query = (
@@ -345,8 +374,22 @@ def defense_legal_research_node(state: CourtState) -> dict[str, Any]:
         }
     except Exception as e:
         logger.warning("Recoverable error in defense_legal_research_node: %s", e)
+        from uuid import uuid4
+        from app.models.legal_models import LegalResearchResult
+        failed_result = LegalResearchResult(
+            research_id=f"RES-LEG-{uuid4().hex[:8].upper()}",
+            side="defense",
+            status="failed",
+            error_message=str(e),
+            question="Defense statutory research",
+            findings=f"Legal research failed/unavailable: {e}",
+            applicable_provisions=[],
+            citations=[],
+            source_pages=[],
+            reasoning_relevance="Statutory legal research could not be executed; no statutory text was retrieved.",
+        )
         return {
-            "defense_legal_research": None,
+            "defense_legal_research": failed_result,
             "errors": [
                 CourtError(
                     agent="defense_legal_research",

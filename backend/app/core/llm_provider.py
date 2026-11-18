@@ -16,20 +16,21 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type, TypeVar
 from dotenv import load_dotenv
 import httpx
 from pydantic import BaseModel
 
-# Automatically load environment variables from .env in project root or current dir
-# override=True ensures .env always wins over stale process/system environment values
+# Load .env defaults without clobbering explicit process/test environment overrides
 _env_file = Path(__file__).resolve().parents[3] / ".env"
 if _env_file.exists():
-    load_dotenv(dotenv_path=_env_file, override=True)
+    load_dotenv(dotenv_path=_env_file, override=False)
 else:
-    load_dotenv(override=True)
+    load_dotenv(override=False)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,27 @@ class LLMConfig:
 
     @classmethod
     def provider(cls) -> str:
-        return os.getenv("LLM_PROVIDER", "ollama").strip().lower()
+        return os.getenv("LLM_PROVIDER", "nvidia").strip().lower()
+
+    @classmethod
+    def enable_failover(cls) -> bool:
+        return os.getenv("LLM_ENABLE_FAILOVER", "true").strip().lower() in {"1", "true", "yes"}
+
+    @classmethod
+    def request_timeout(cls) -> float:
+        return float(os.getenv("LLM_REQUEST_TIMEOUT", "60.0"))
+
+    @classmethod
+    def max_retries(cls) -> int:
+        return int(os.getenv("LLM_MAX_RETRIES", "2"))
+
+    @classmethod
+    def retry_backoff(cls) -> float:
+        return float(os.getenv("LLM_RETRY_BACKOFF", "1.0"))
+
+    @classmethod
+    def health_check_interval(cls) -> float:
+        return float(os.getenv("LLM_HEALTH_CHECK_INTERVAL", "60.0"))
 
     @classmethod
     def ollama_base_url(cls) -> str:
@@ -49,7 +70,11 @@ class LLMConfig:
 
     @classmethod
     def ollama_model(cls) -> str:
-        return os.getenv("OLLAMA_MODEL", "llama3:latest").strip()
+        return os.getenv("OLLAMA_MODEL", "qwen3:4b").strip()
+
+    @classmethod
+    def ollama_backup_model(cls) -> str:
+        return os.getenv("OLLAMA_BACKUP_MODEL", "qwen3:4b").strip()
 
     @classmethod
     def nvidia_api_key(cls) -> Optional[str]:
@@ -61,7 +86,7 @@ class LLMConfig:
 
     @classmethod
     def nvidia_model(cls) -> str:
-        return os.getenv("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct").strip()
+        return os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-lightning-30b-a3b").strip()
 
     @classmethod
     def gemini_api_key(cls) -> Optional[str]:
@@ -106,6 +131,49 @@ class BaseLLMClient:
 
     def health_check(self) -> dict[str, Any]:
         raise NotImplementedError
+
+
+def _strip_thinking(content: str) -> str:
+    """Remove <think>...</think> reasoning blocks emitted by reasoning models (e.g. Nemotron, Qwen3)."""
+    if not content:
+        return ""
+    cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL | re.IGNORECASE)
+    return cleaned.strip()
+
+
+def _unwrap_properties_if_data(obj: Any) -> Any:
+    """Unwrap an accidental {'properties': {...}} wrapper when its entries are data values rather than JSON Schema defs."""
+    if isinstance(obj, dict) and "properties" in obj and isinstance(obj["properties"], dict):
+        props = obj["properties"]
+        if "$defs" not in props and props:
+            looks_like_schema = all(
+                isinstance(v, dict) and ("type" in v or "$ref" in v or "anyOf" in v or "description" in v and "properties" in v)
+                for v in props.values()
+            )
+            if not looks_like_schema:
+                return props
+    return obj
+
+
+def _extract_json_payload(content: str) -> dict[str, Any]:
+    """Extract and parse a JSON object from model output, handling think tags and markdown fences."""
+    cleaned = _strip_thinking(content)
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+    try:
+        parsed = json.loads(cleaned)
+        return _unwrap_properties_if_data(parsed)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        if match:
+            parsed = json.loads(match.group(0))
+            return _unwrap_properties_if_data(parsed)
+        raise
 
 
 class OllamaLLMClient(BaseLLMClient):
@@ -160,7 +228,7 @@ class OllamaLLMClient(BaseLLMClient):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        with httpx.Client(timeout=60.0) as client:
+        with httpx.Client(timeout=LLMConfig.request_timeout()) as client:
             res = client.post(
                 f"{self.base_url}/api/chat",
                 json={
@@ -171,7 +239,7 @@ class OllamaLLMClient(BaseLLMClient):
             )
             res.raise_for_status()
             data = res.json()
-            return data.get("message", {}).get("content", "")
+            return _strip_thinking(data.get("message", {}).get("content", ""))
 
     def generate_structured(
         self,
@@ -192,26 +260,20 @@ class OllamaLLMClient(BaseLLMClient):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": instruction})
 
-        try:
-            with httpx.Client(timeout=90.0) as client:
-                res = client.post(
-                    f"{self.base_url}/api/chat",
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "format": "json",
-                        "stream": False,
-                    },
-                )
-                res.raise_for_status()
-                content = res.json().get("message", {}).get("content", "")
-                parsed = json.loads(content)
-                return response_schema.model_validate(parsed)
-        except Exception as e:
-            logger.warning("Ollama generation failed: %s. Using fallback data.", e)
-            if fallback_data is not None:
-                return response_schema.model_validate(fallback_data)
-            return MockLLMClient._generate_mock_instance(response_schema)
+        with httpx.Client(timeout=max(LLMConfig.request_timeout(), 90.0)) as client:
+            res = client.post(
+                f"{self.base_url}/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": messages,
+                    "format": "json",
+                    "stream": False,
+                },
+            )
+            res.raise_for_status()
+            content = res.json().get("message", {}).get("content", "")
+            parsed = _extract_json_payload(content)
+            return response_schema.model_validate(parsed)
 
 
 class NvidiaLLMClient(BaseLLMClient):
@@ -287,20 +349,25 @@ class NvidiaLLMClient(BaseLLMClient):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        with httpx.Client(timeout=60.0) as client:
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": 2048,
+        }
+        if "nemotron" in self.model.lower() and os.getenv("NVIDIA_ENABLE_THINKING", "false").lower() not in {"1", "true", "yes"}:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+
+        with httpx.Client(timeout=LLMConfig.request_timeout()) as client:
             res = client.post(
                 f"{self.base_url}/chat/completions",
                 headers=headers,
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": 0.2,
-                    "max_tokens": 2048,
-                },
+                json=payload,
             )
             res.raise_for_status()
             data = res.json()
-            return data["choices"][0]["message"]["content"]
+            content = data["choices"][0]["message"].get("content") or ""
+            return _strip_thinking(content)
 
     def generate_structured(
         self,
@@ -319,43 +386,38 @@ class NvidiaLLMClient(BaseLLMClient):
         schema_json = json.dumps(response_schema.model_json_schema(), indent=2)
         instruction = (
             f"{prompt}\n\n"
-            f"You must return ONLY a JSON object that conforms exactly to this schema:\n"
-            f"{schema_json}\n"
-            f"No codeblocks, no markdown, only raw JSON."
+            f"CRITICAL: Return ONLY a valid JSON DATA INSTANCE populated with the extracted values.\n"
+            f"Do NOT return the JSON Schema definition ($defs, properties, required) itself.\n"
+            f"Schema to populate:\n{schema_json}\n"
+            f"Output raw JSON only, no markdown fences."
         )
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": instruction})
 
-        try:
-            with httpx.Client(timeout=90.0) as client:
-                res = client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers=headers,
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "temperature": 0.1,
-                    },
-                )
-                res.raise_for_status()
-                content = res.json()["choices"][0]["message"]["content"]
-                # Clean any markdown fences if present
-                clean_content = content.strip()
-                if clean_content.startswith("```json"):
-                    clean_content = clean_content[7:]
-                if clean_content.startswith("```"):
-                    clean_content = clean_content[3:]
-                if clean_content.endswith("```"):
-                    clean_content = clean_content[:-3]
-                parsed = json.loads(clean_content.strip())
-                return response_schema.model_validate(parsed)
-        except Exception as e:
-            logger.warning("NVIDIA generation failed: %s. Falling back.", e)
-            if fallback_data is not None:
-                return response_schema.model_validate(fallback_data)
-            return MockLLMClient._generate_mock_instance(response_schema)
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.1,
+            "max_tokens": 8192,
+            "response_format": {"type": "json_object"},
+        }
+        if "nemotron" in self.model.lower() and os.getenv("NVIDIA_ENABLE_THINKING", "false").lower() not in {"1", "true", "yes"}:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+
+        with httpx.Client(timeout=max(LLMConfig.request_timeout(), 90.0)) as client:
+            res = client.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+            res.raise_for_status()
+            content = res.json()["choices"][0]["message"].get("content") or ""
+            if not content.strip():
+                raise ValueError("NVIDIA NIM returned empty content (reasoning budget exhausted).")
+            parsed = _extract_json_payload(content)
+            return response_schema.model_validate(parsed)
 
 
 class OpenRouterLLMClient(BaseLLMClient):
@@ -585,7 +647,7 @@ class OpenRouterLLMClient(BaseLLMClient):
                         "model": self.model,
                         "messages": messages,
                         "temperature": 0.1,
-                        "max_tokens": 4096,
+                        "max_tokens": 8192,
                         "response_format": {"type": "json_object"},
                     }
                     res = client.post(
@@ -878,6 +940,215 @@ class MockLLMClient(BaseLLMClient):
         return schema.model_validate(sample_dict)
 
 
+class FailoverLLMManager(BaseLLMClient):
+    """
+    Centralized LLM Failover Manager: NVIDIA NIM primary + Ollama (qwen3:4b) local backup.
+    Implements bounded retries, exponential backoff, circuit-breaker cooldown,
+    automatic recovery to NVIDIA, and structured observability without logging secrets.
+    """
+
+    def __init__(
+        self,
+        primary: Optional[BaseLLMClient] = None,
+        backup: Optional[BaseLLMClient] = None,
+        max_retries: Optional[int] = None,
+        backoff_seconds: Optional[float] = None,
+        health_check_interval: Optional[float] = None,
+    ):
+        self.primary = primary or NvidiaLLMClient()
+        self.backup = backup or OllamaLLMClient(model=LLMConfig.ollama_backup_model())
+        self.max_retries = LLMConfig.max_retries() if max_retries is None else max_retries
+        self.backoff_seconds = LLMConfig.retry_backoff() if backoff_seconds is None else backoff_seconds
+        self.health_check_interval = (
+            LLMConfig.health_check_interval() if health_check_interval is None else health_check_interval
+        )
+        self._lock = threading.Lock()
+        self._circuit_open_until: float = 0.0
+        self._was_failed_over: bool = False
+        self.last_active_provider: str = "nvidia"
+        self.last_active_model: str = getattr(self.primary, "model", LLMConfig.nvidia_model())
+        self.usage_stats: dict[str, int] = {
+            "primary_success": 0,
+            "primary_failures": 0,
+            "backup_success": 0,
+            "backup_failures": 0,
+            "failovers": 0,
+            "recoveries": 0,
+            "retries": 0,
+        }
+
+    @staticmethod
+    def _classify_error(exc: Exception) -> tuple[bool, str]:
+        """Return (is_retryable_for_failover, error_category)."""
+        if isinstance(exc, httpx.TimeoutException):
+            return True, "timeout"
+        if isinstance(exc, httpx.RequestError):
+            return True, "connection_error"
+        if isinstance(exc, httpx.HTTPStatusError):
+            code = exc.response.status_code
+            if code == 429:
+                return True, "rate_limit_429"
+            if 500 <= code < 600:
+                return True, f"server_error_{code}"
+            return False, f"client_error_{code}"
+        if isinstance(exc, ValueError):
+            return False, "invalid_request_or_schema"
+        return False, type(exc).__name__
+
+    def _execute_with_failover(self, operation_name: str, call_fn, agent_name: str = "unknown") -> Any:
+        now = time.monotonic()
+        with self._lock:
+            circuit_open = now < self._circuit_open_until
+            was_failed_over = self._was_failed_over
+
+        primary_model = getattr(self.primary, "model", LLMConfig.nvidia_model())
+        backup_model = getattr(self.backup, "model", LLMConfig.ollama_backup_model())
+        primary_err: Optional[Exception] = None
+        err_category = "none"
+
+        if not circuit_open:
+            for attempt in range(self.max_retries + 1):
+                t0 = time.perf_counter()
+                try:
+                    result = call_fn(self.primary)
+                    dur_ms = (time.perf_counter() - t0) * 1000.0
+                    with self._lock:
+                        self.usage_stats["primary_success"] += 1
+                        self.last_active_provider = "nvidia"
+                        self.last_active_model = primary_model
+                        if was_failed_over:
+                            self._was_failed_over = False
+                            self._circuit_open_until = 0.0
+                            self.usage_stats["recoveries"] += 1
+                            logger.info(
+                                "LLM_EVENT=RECOVERY provider=nvidia model=%s agent=%s duration_ms=%.1f retries=%d",
+                                primary_model, agent_name, dur_ms, attempt,
+                            )
+                        else:
+                            logger.info(
+                                "LLM_EVENT=SUCCESS provider=nvidia model=%s agent=%s op=%s duration_ms=%.1f retries=%d",
+                                primary_model, agent_name, operation_name, dur_ms, attempt,
+                            )
+                    return result
+                except Exception as exc:
+                    dur_ms = (time.perf_counter() - t0) * 1000.0
+                    retryable, err_category = self._classify_error(exc)
+                    primary_err = exc
+                    logger.warning(
+                        "LLM_EVENT=PRIMARY_ERROR provider=nvidia model=%s agent=%s attempt=%d/%d category=%s retryable=%s duration_ms=%.1f",
+                        primary_model, agent_name, attempt + 1, self.max_retries + 1, err_category, retryable, dur_ms,
+                    )
+                    if not retryable:
+                        raise
+                    if attempt < self.max_retries:
+                        with self._lock:
+                            self.usage_stats["retries"] += 1
+                        if self.backoff_seconds > 0:
+                            time.sleep(self.backoff_seconds * (2 ** attempt))
+
+            # Exhausted primary retries -> open circuit and fail over
+            with self._lock:
+                self.usage_stats["primary_failures"] += 1
+                self.usage_stats["failovers"] += 1
+                self._was_failed_over = True
+                self._circuit_open_until = time.monotonic() + self.health_check_interval
+            logger.warning(
+                "LLM_EVENT=FAILOVER from=nvidia to=ollama backup_model=%s agent=%s reason=%s cooldown_s=%.1f",
+                backup_model, agent_name, err_category, self.health_check_interval,
+            )
+        else:
+            logger.info(
+                "LLM_EVENT=CIRCUIT_OPEN provider=nvidia routing=ollama backup_model=%s agent=%s",
+                backup_model, agent_name,
+            )
+
+        # Backup: Ollama
+        health = self.backup.health_check()
+        if not health.get("available"):
+            with self._lock:
+                self.usage_stats["backup_failures"] += 1
+            raise RuntimeError(
+                f"NVIDIA primary failed ({err_category}) and Ollama backup at {LLMConfig.ollama_base_url()} is unavailable: "
+                f"{health.get('error', 'unreachable')}"
+            ) from primary_err
+        if health.get("model_found") is False:
+            with self._lock:
+                self.usage_stats["backup_failures"] += 1
+            raise RuntimeError(
+                f"NVIDIA primary failed ({err_category}) and Ollama backup model '{backup_model}' is not installed. "
+                f"Run: ollama pull {backup_model}"
+            ) from primary_err
+
+        t0 = time.perf_counter()
+        try:
+            result = call_fn(self.backup)
+            dur_ms = (time.perf_counter() - t0) * 1000.0
+            with self._lock:
+                self.usage_stats["backup_success"] += 1
+                self.last_active_provider = "ollama"
+                self.last_active_model = backup_model
+            logger.info(
+                "LLM_EVENT=BACKUP_SUCCESS provider=ollama model=%s agent=%s op=%s duration_ms=%.1f",
+                backup_model, agent_name, operation_name, dur_ms,
+            )
+            return result
+        except Exception as backup_exc:
+            dur_ms = (time.perf_counter() - t0) * 1000.0
+            with self._lock:
+                self.usage_stats["backup_failures"] += 1
+            logger.error(
+                "LLM_EVENT=BACKUP_FAILED provider=ollama model=%s agent=%s duration_ms=%.1f err=%s",
+                backup_model, agent_name, dur_ms, backup_exc,
+            )
+            raise RuntimeError(
+                f"Both NVIDIA primary ({err_category}) and Ollama backup ({backup_model}) failed: {backup_exc}"
+            ) from backup_exc
+
+    def generate_text(self, prompt: str, system_prompt: str = "", agent_name: str = "unknown") -> str:
+        return self._execute_with_failover(
+            "generate_text",
+            lambda client: client.generate_text(prompt=prompt, system_prompt=system_prompt),
+            agent_name=agent_name,
+        )
+
+    def generate_structured(
+        self,
+        prompt: str,
+        response_schema: Type[T],
+        system_prompt: str = "",
+        fallback_data: Optional[dict[str, Any]] = None,
+        agent_name: str = "unknown",
+    ) -> T:
+        return self._execute_with_failover(
+            "generate_structured",
+            lambda client: client.generate_structured(
+                prompt=prompt,
+                response_schema=response_schema,
+                system_prompt=system_prompt,
+                fallback_data=fallback_data,
+            ),
+            agent_name=agent_name,
+        )
+
+    def health_check(self) -> dict[str, Any]:
+        primary_health = self.primary.health_check()
+        backup_health = self.backup.health_check()
+        circuit_open = time.monotonic() < self._circuit_open_until
+        active = "ollama" if (circuit_open or not primary_health.get("available")) and backup_health.get("available") else (
+            "nvidia" if primary_health.get("available") else "unavailable"
+        )
+        return {
+            "provider": active,
+            "primary": primary_health,
+            "backup": backup_health,
+            "available": bool(primary_health.get("available") or backup_health.get("available")),
+            "circuit_open": circuit_open,
+            "last_active_provider": self.last_active_provider,
+            "last_active_model": self.last_active_model,
+            "usage_stats": dict(self.usage_stats),
+        }
+
+
 class LLMProvider:
     """
     Centralized factory and registry for AI Court of India LLMs.
@@ -905,6 +1176,11 @@ class LLMProvider:
             if target == "ollama":
                 cls._instances[target] = OllamaLLMClient()
             elif target == "nvidia":
+                if LLMConfig.enable_failover():
+                    cls._instances[target] = FailoverLLMManager()
+                else:
+                    cls._instances[target] = NvidiaLLMClient()
+            elif target == "nvidia_direct":
                 cls._instances[target] = NvidiaLLMClient()
             elif target in ("openrouter", "open_router"):
                 cls._instances[target] = OpenRouterLLMClient()

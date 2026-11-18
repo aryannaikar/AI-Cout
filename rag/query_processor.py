@@ -45,6 +45,10 @@ class QueryProcessor:
             return ProcessedQuery(query, "IPC", [], historical_statute_requested="Indian Penal Code, 1860")
         if re.search(r'\b(crpc|code of criminal procedure)\b', query_lower):
             return ProcessedQuery(query, "CrPC", [], historical_statute_requested="Code of Criminal Procedure, 1973")
+        if re.search(r'(railway property|r\.?p\.?\(?u\.?p\.?\)?\s*act)', query_lower):
+            return ProcessedQuery(query, "RPUP_Act", [], historical_statute_requested="Railway Property (Unlawful Possession) Act, 1966")
+        if re.search(r'\barms act\b', query_lower):
+            return ProcessedQuery(query, "Arms_Act", [], historical_statute_requested="Arms Act, 1959")
 
         # Implicit concept scoring
         act_scores = {act: 0 for act in self.act_keywords}

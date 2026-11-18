@@ -5,7 +5,7 @@ Pydantic data models for Prosecution Arguments, Defense Arguments, and the 12-se
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -107,6 +107,64 @@ class JudicialIssueAnalysis(BaseModel):
     judicial_finding: str = Field(description="Finding: 'PROVED', 'NOT PROVED', or 'DISPROVED'.")
 
 
+class IngredientItem(BaseModel):
+    """Single statutory ingredient evaluated against evidence and rebuttals."""
+
+    ingredient_id: str
+    legal_description: str
+    source_citation: str
+    supporting_evidence: list[str] = Field(default_factory=list)
+    contradictory_evidence: list[str] = Field(default_factory=list)
+    related_witnesses: list[str] = Field(default_factory=list)
+    related_exhibits: list[str] = Field(default_factory=list)
+    prosecution_argument: str = ""
+    defense_argument: str = ""
+    assessment_status: Literal["Supported", "Disputed", "Not established", "Not assessable"] = "Not assessable"
+    judge_reasoning: str = ""
+
+
+class IngredientChecklist(BaseModel):
+    """Structured statutory ingredient checklist for a single current charge & accused."""
+
+    charge_key: str
+    act_name: str
+    section: str
+    accused_name: str
+    burden_of_proof: str = "Prosecution must prove every statutory ingredient beyond reasonable doubt."
+    ingredients: list[IngredientItem] = Field(default_factory=list)
+
+
+class ScrutinyChallenge(BaseModel):
+    """Challenge raised by the independent Devil's Advocate scrutiny stage."""
+
+    challenge_id: str
+    category: str
+    severity: Literal["low", "medium", "high"] = "medium"
+    description: str
+    affected_accused_or_charge: Optional[str] = None
+    recommendation: str = ""
+
+
+class DevilsAdvocateReport(BaseModel):
+    """Output of the independent Devil's Advocate scrutiny review."""
+
+    reviewed: bool = True
+    requires_revision: bool = False
+    challenges: list[ScrutinyChallenge] = Field(default_factory=list)
+    summary: str = ""
+    llm_used: bool = False
+
+
+class AccusedFinding(BaseModel):
+    """Per-accused / per-proceeding finding when multiple accused or connected proceedings exist."""
+
+    accused_name: str = Field(description="Name of the specific accused or petitioner.")
+    proceeding_id: Optional[str] = Field(default=None, description="Connected proceeding identifier if applicable.")
+    charges_decided: list[str] = Field(default_factory=list, description="Charges decided for this specific person.")
+    finding: str = Field(description="Outcome for this accused: 'CONVICTION', 'ACQUITTAL', or 'PARTIAL CONVICTION'.")
+    reasoning_summary: str = Field(description="Brief individualized reasoning distinguishing this accused's role and evidence.")
+
+
 class Judgment(BaseModel):
     """
     Formal, exhaustive judicial verdict rendered by the Judge Agent.
@@ -160,6 +218,10 @@ class Judgment(BaseModel):
     findings_per_charge: dict[str, str] = Field(
         description="Section 9: Specific finding per charge (e.g. {'Section 303 BNS': 'Guilty', 'Section 66 IT Act': 'Acquitted'})."
     )
+    accused_findings: list[AccusedFinding] = Field(
+        default_factory=list,
+        description="Individualized findings per accused/petitioner across connected proceedings or multi-accused trials.",
+    )
 
     # 10. Final decision
     final_decision: str = Field(
@@ -174,4 +236,12 @@ class Judgment(BaseModel):
     # 12. Legal citations
     legal_citations: list[str] = Field(
         description="Section 12: Grounded statutory citations supporting the judgment."
+    )
+    ingredient_checklists: list[IngredientChecklist] = Field(
+        default_factory=list,
+        description="Structured statutory ingredient checklists evaluated per charge and accused.",
+    )
+    scrutiny_report: Optional[DevilsAdvocateReport] = Field(
+        default=None,
+        description="Independent Devil's Advocate scrutiny findings considered before final judgment.",
     )

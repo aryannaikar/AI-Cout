@@ -225,13 +225,23 @@ def get_prosecutor_legal_research_query(case: Optional[StructuredCase]) -> str:
     """Generate statute-aware prosecution research query respecting historical transition."""
     regime_info = detect_case_legal_regime(case)
     if case and case.charges:
-        primary_charge = case.charges[0]
-        statute_name = primary_charge.statute
-        # Ensure historical case doesn't force BNS if charged under IPC
-        if regime_info["is_historical"] and "bns" in statute_name.lower():
-            statute_name = "Indian Penal Code"
-        return f"essential ingredients of {primary_charge.section} {statute_name}"
-    
+        active_charges = case.current_charges() if hasattr(case, "current_charges") else [
+            c for c in case.charges if c.record_status == "current"
+        ]
+        target_charges = active_charges or case.charges
+        seen_pairs: list[str] = []
+        for ch in target_charges:
+            statute_name = ch.statute
+            if regime_info["is_historical"] and (
+                "bns" in statute_name.lower() or "bharatiya nyaya sanhita" in statute_name.lower()
+            ):
+                statute_name = "Indian Penal Code"
+            pair = f"{ch.section} {statute_name}".strip()
+            if pair.casefold() not in {p.casefold() for p in seen_pairs}:
+                seen_pairs.append(pair)
+        if seen_pairs:
+            return f"essential ingredients of {'; '.join(seen_pairs)}"
+
     if regime_info["is_historical"]:
         return "burden of proof beyond reasonable doubt criminal prosecution under Indian Penal Code"
     return "burden of proof beyond reasonable doubt criminal prosecution under Bharatiya Nyaya Sanhita"

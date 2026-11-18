@@ -62,10 +62,17 @@ class ProsecutorAgent:
         )
 
         # 2. Statutory Elements that must be proven
+        active_charges = (
+            case.current_charges()
+            if hasattr(case, "current_charges")
+            else [c for c in case.charges if c.record_status == "current"]
+        )
+        target_charges = active_charges or case.charges
         statutory_elements = []
-        for ch in case.charges:
-            statutory_elements.append(f"Proof of the acts and guilty intention required under {ch.section} ({ch.statute}).")
-        statutory_elements.append("Proof that the accused knowingly possessed the property without lawful justification (conscious possession).")
+        for ch in target_charges:
+            statutory_elements.append(
+                f"Proof of the acts and guilty intention required under {ch.section} ({ch.statute}) for {ch.accused_name}."
+            )
 
         # 3. Categorized Argument Components (FACT, EVIDENCE, LEGAL_RULE, INFERENCE, ARGUMENT)
         components: list[ArgumentComponent] = []
@@ -101,7 +108,7 @@ class ProsecutorAgent:
             )
 
         # LEGAL_RULE
-        if legal_research and legal_research.citations:
+        if legal_research and getattr(legal_research, "status", "completed") == "completed" and legal_research.citations:
             top_cit = legal_research.citations[0]
             top_prov = legal_research.applicable_provisions[0] if legal_research.applicable_provisions else None
             prov_text = top_prov.text[:150] if top_prov else "Statutory definition"

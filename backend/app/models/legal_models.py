@@ -35,6 +35,10 @@ class ApplicableProvision(BaseModel):
     applicability_uncertainty: Optional[str] = Field(
         default=None, description="Why applicability could not be resolved from the packet or corpus."
     )
+    source_type: Literal["verified_statute", "verified_precedent", "unverified_external"] = Field(
+        default="verified_statute",
+        description="Distinguishes statutory corpus text from verified precedents or unverified external material.",
+    )
 
 
 class LegalResearchResult(BaseModel):
@@ -43,6 +47,14 @@ class LegalResearchResult(BaseModel):
     research_id: str = Field(description="Unique research identifier.")
     side: Literal["prosecution", "defense", "judicial"] = Field(
         description="Courtroom perspective conducting the research."
+    )
+    status: Literal["completed", "empty", "unavailable", "failed"] = Field(
+        default="completed",
+        description="Explicit research outcome status: 'completed' only when source provisions were retrieved.",
+    )
+    error_message: Optional[str] = Field(
+        default=None,
+        description="Error or unavailability reason when status is 'unavailable' or 'failed'.",
     )
     question: str = Field(description="The legal question researched.")
     findings: str = Field(description="Synthesized legal conclusion grounded in statutory law.")
@@ -60,6 +72,14 @@ class LegalResearchResult(BaseModel):
     )
     reasoning_relevance: str = Field(
         description="Substantive analysis of how the retrieved provisions govern the case."
+    )
+    retrieval_method: str = Field(
+        default="hybrid_rrf",
+        description="Retrieval mode used (e.g. 'hybrid_rrf', 'dense_only', 'not_run').",
+    )
+    reranker_status: str = Field(
+        default="not_run",
+        description="Explicit Cross-Encoder reranker status ('applied', 'skipped_disabled', 'fallback_unavailable', 'fallback_error', 'not_run').",
     )
 
 

@@ -17,6 +17,7 @@ from app.models.evidence_models import (
     EvidenceType,
 )
 from app.models.evidence_package_models import EvidencePackage
+from app.services.evidence_intelligence import EvidenceIntelligenceBuilder
 from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -127,8 +128,8 @@ class EvidenceAnalysisAgent:
         # Identify missing evidence gaps from case metadata
         if case.missing_or_uncertain_info:
             missing_gaps.extend(case.missing_or_uncertain_info)
-        else:
-            missing_gaps.append("Absence of independent civilian panch witness to substantiate recovery.")
+
+        intel = EvidenceIntelligenceBuilder.build(case=case)
 
         # Check for BSA Section 61 / 63 compliance on electronic records
         has_electronic = any(e.type == EvidenceType.ELECTRONIC for e in analyzed_items)
@@ -155,6 +156,7 @@ class EvidenceAnalysisAgent:
             missing_evidence_gaps=missing_gaps,
             documentary_compliance_assessment=compliance_note,
             summary=summary,
+            **intel,
         )
 
     def analyze_evidence_package(
@@ -274,8 +276,7 @@ class EvidenceAnalysisAgent:
                 )
             )
 
-        if not missing_gaps:
-            missing_gaps.append("Absence of independent civilian panch witness during search and seizure.")
+        intel = EvidenceIntelligenceBuilder.build(case=case, package=package)
 
         has_electronic = any(e.type == EvidenceType.ELECTRONIC for e in analyzed_items)
         compliance_note = (
@@ -299,6 +300,7 @@ class EvidenceAnalysisAgent:
             missing_evidence_gaps=missing_gaps,
             documentary_compliance_assessment=compliance_note,
             summary=summary,
+            **intel,
         )
 
     @staticmethod

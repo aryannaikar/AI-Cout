@@ -48,7 +48,12 @@ class LegalResearchAgent:
         allowed_acts = tuple(resolved_regime["allowed_act_filters"])
         # An explicit requested statute must be compatible with the selected law.
         if act_filter and act_filter not in allowed_acts:
-            return self._empty_result(question, resolved_regime, f"Requested act '{act_filter}' is incompatible with the selected legal regime.")
+            return self._empty_result(
+                question,
+                resolved_regime,
+                f"Requested act '{act_filter}' is incompatible with the selected legal regime.",
+                status="unavailable",
+            )
 
         results = self.retriever.retrieve(
             query=question,
@@ -64,13 +69,25 @@ class LegalResearchAgent:
                 resolved_regime,
                 f"No source-faithful {resolved_regime['regime']} statutory material was found in the legal corpus. "
                 "No modern provision was substituted or relabelled.",
+                status="empty",
             )
 
         provisions = [self._to_provision(result, question, resolved_regime) for result in results]
         citations = list(dict.fromkeys(p.citation for p in provisions))
+        retrieval_method = getattr(
+            self.retriever,
+            "last_retrieval_method",
+            results[0].metadata.get("retrieval_method", "hybrid_rrf") if results else "not_run",
+        )
+        reranker_status = getattr(
+            self.retriever,
+            "last_reranker_status",
+            results[0].metadata.get("reranker_status", "not_run") if results else "not_run",
+        )
         return LegalResearchResult(
             research_id=f"RES-LEG-{uuid4().hex[:8].upper()}",
             side=self.side,
+            status="completed",
             question=question,
             findings=self._synthesize_findings(question, provisions),
             applicable_provisions=provisions,
@@ -79,6 +96,8 @@ class LegalResearchAgent:
             reasoning_relevance=(
                 f"{resolved_regime['reasoning']} Retrieved only: {', '.join(sorted(set(p.short_name for p in provisions)))}."
             ),
+            retrieval_method=retrieval_method,
+            reranker_status=reranker_status,
         )
 
     def _to_provision(self, result: RetrievalResult, question: str, regime: dict[str, Any]) -> ApplicableProvision:
@@ -102,10 +121,23 @@ class LegalResearchAgent:
             ),
         )
 
-    def _empty_result(self, question: str, regime: dict[str, Any], limitation: str) -> LegalResearchResult:
+    def _empty_result(
+        self,
+        question: str,
+        regime: dict[str, Any],
+        limitation: str,
+        status: Literal["empty", "unavailable", "failed"] = "empty",
+    ) -> LegalResearchResult:
         return LegalResearchResult(
-            research_id=f"RES-LEG-{uuid4().hex[:8].upper()}", side=self.side, question=question,
-            findings=limitation, applicable_provisions=[], citations=[], source_pages=[],
+            research_id=f"RES-LEG-{uuid4().hex[:8].upper()}",
+            side=self.side,
+            status=status,
+            error_message=limitation,
+            question=question,
+            findings=limitation,
+            applicable_provisions=[],
+            citations=[],
+            source_pages=[],
             reasoning_relevance=f"{regime['reasoning']} {limitation}",
         )
 

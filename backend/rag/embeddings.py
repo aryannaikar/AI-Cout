@@ -40,6 +40,22 @@ class EmbeddingModel:
             with self._cache_lock:
                 if cache_key not in self._model_cache:
                     logger.info("Loading shared SentenceTransformer model: %s", self.model_name)
+                    import importlib.machinery
+                    import sys
+                    from unittest.mock import MagicMock
+
+                    try:
+                        import torchvision  # noqa: F401
+                    except Exception:
+                        sys.modules["torchvision"] = None  # type: ignore[assignment]
+                    try:
+                        import pyarrow.dataset  # noqa: F401
+                    except Exception:
+                        ds_mod = MagicMock()
+                        ds_mod.__spec__ = importlib.machinery.ModuleSpec("datasets", None)
+                        ds_mod.__version__ = "0.0.0"
+                        sys.modules["datasets"] = ds_mod
+
                     from sentence_transformers import SentenceTransformer
 
                     self._model_cache[cache_key] = SentenceTransformer(

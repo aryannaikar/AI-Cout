@@ -109,14 +109,15 @@ def extract_grounded_case_context(
 
     charges = []
     if case and case.charges:
-        for c in case.charges:
-            charges.append(f"{c.statute} {c.section} ({c.description})")
+        active_charges = (
+            case.current_charges()
+            if hasattr(case, "current_charges")
+            else [c for c in case.charges if c.record_status == "current"]
+        )
+        for c in (active_charges or case.charges):
+            charges.append(f"{c.statute} {c.section} ({c.description}) [accused: {c.accused_name}]")
     else:
-        charges = [
-            "Section 317 BNS / Section 412 IPC: Dishonestly receiving or retaining stolen property (Indica vehicle)",
-            "Section 420, 468, 471 IPC: Use of forged / fake number plates (Ex.P1 & Ex.P2)",
-            "Section 25 Arms Act: Unlawful possession of country-made pistol (Ex.P3)"
-        ]
+        charges = ["No specific statutory charges extracted from case packet."]
 
     prepared_arguments = []
     if prosecution:
@@ -157,8 +158,13 @@ def get_case_issues(case: Optional[StructuredCase]) -> List[str]:
             return filtered
 
     if case and case.charges:
+        active_charges = (
+            case.current_charges()
+            if hasattr(case, "current_charges")
+            else [c for c in case.charges if c.record_status == "current"]
+        )
         issues = []
-        for ch in case.charges[:2]:
+        for ch in (active_charges or case.charges)[:2]:
             issues.append(f"Whether the prosecution proved the essential statutory ingredients of {ch.section} ({ch.statute}) beyond reasonable doubt?")
         issues.append("Whether the evidentiary chain of custody was maintained in compliance with statutory procedure?")
         issues.append("Whether the accused is entitled to the benefit of reasonable doubt?")

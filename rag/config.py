@@ -67,6 +67,13 @@ class RAGConfig:
     # Retrieval settings
     retrieval_top_k: int = int(os.getenv("RETRIEVAL_TOP_K", "5"))
     retrieval_candidate_k: int = int(os.getenv("RETRIEVAL_CANDIDATE_K", "20"))
+    hybrid_rrf_k: int = int(os.getenv("HYBRID_RRF_K", "60"))
+
+    # Reranker settings
+    reranker_model_name: str = os.getenv(
+        "RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    )
+    use_reranker: bool = os.getenv("USE_RERANKER", "true").lower() in {"1", "true", "yes"}
 
     def __post_init__(self):
         # Disable noisy symlink warnings from huggingface_hub

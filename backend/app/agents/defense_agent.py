@@ -105,7 +105,7 @@ class DefenseAgent:
             )
 
         # LEGAL_RULE
-        if legal_research and legal_research.citations:
+        if legal_research and getattr(legal_research, "status", "completed") == "completed" and legal_research.citations:
             top_cit = legal_research.citations[0]
             components.append(
                 ArgumentComponent(

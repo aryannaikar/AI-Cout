@@ -62,7 +62,10 @@ def test_3_provider_selection():
     assert isinstance(ollama_client, OllamaLLMClient)
 
     nvidia_client = LLMProvider.get("nvidia")
-    assert isinstance(nvidia_client, NvidiaLLMClient)
+    from app.core.llm_provider import FailoverLLMManager
+    assert isinstance(nvidia_client, (NvidiaLLMClient, FailoverLLMManager))
+    if isinstance(nvidia_client, FailoverLLMManager):
+        assert isinstance(nvidia_client.primary, NvidiaLLMClient)
 
 
 def test_4_unreachable_ollama_produces_useful_error():
