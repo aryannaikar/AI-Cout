@@ -19,6 +19,20 @@ for d in [str(_backend_dir), str(_repo_root)]:
     if d not in sys.path:
         sys.path.insert(0, d)
 
+# Workaround for Windows Smart App Control blocking cygrpc DLL in chromadb's unused OTel exporter
+try:
+    import grpc
+except Exception:
+    import warnings
+    from unittest.mock import MagicMock
+    warnings.filterwarnings("ignore", category=RuntimeWarning, module="opentelemetry")
+    mock_grpc = MagicMock()
+    mock_grpc.__version__ = "1.63.2"
+    sys.modules["grpc"] = mock_grpc
+    sys.modules["grpc._compression"] = MagicMock()
+    sys.modules["grpc._cython"] = MagicMock()
+    sys.modules["grpc._cython.cygrpc"] = MagicMock()
+
 from dotenv import load_dotenv
 
 _env_path = _repo_root / ".env"

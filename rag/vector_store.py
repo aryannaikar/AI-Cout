@@ -9,6 +9,20 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
+try:
+    import grpc
+except Exception:
+    import sys
+    import warnings
+    from unittest.mock import MagicMock
+    warnings.filterwarnings("ignore", category=RuntimeWarning, module="opentelemetry")
+    mock_grpc = MagicMock()
+    mock_grpc.__version__ = "1.63.2"
+    sys.modules["grpc"] = mock_grpc
+    sys.modules["grpc._compression"] = MagicMock()
+    sys.modules["grpc._cython"] = MagicMock()
+    sys.modules["grpc._cython.cygrpc"] = MagicMock()
+
 import chromadb
 from chromadb.config import Settings
 
