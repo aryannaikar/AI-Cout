@@ -16,6 +16,33 @@ export interface AgentMessage {
   status: "thinking" | "completed" | "error";
 }
 
+export interface ResearchProvisionRef {
+  act: string;
+  short_name?: string;
+  section: string;
+  title?: string;
+  page?: number;
+  source_file?: string;
+  citation?: string;
+  reasoning?: string;
+}
+
+export interface WebSourceRef {
+  title: string;
+  url?: string;
+  summary?: string;
+}
+
+export interface SideResearchContext {
+  side: "prosecution" | "defense";
+  legalResearchAgent?: string;
+  retrievalMethod?: string;
+  provisions: ResearchProvisionRef[];
+  webResearchAgent?: string;
+  webSources: WebSourceRef[];
+  casePacketPdf?: string;
+}
+
 export interface LLMBrainStatus {
   provider: string;
   model: string;

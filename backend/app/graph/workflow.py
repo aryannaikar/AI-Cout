@@ -500,13 +500,17 @@ def _format_agent_payload(node_name: str, update: dict[str, Any]) -> dict[str, A
             payload["question"] = res.question
             payload["findings"] = res.findings
             payload["citations"] = res.citations
+            payload["retrieval_method"] = getattr(res, "retrieval_method", "hybrid_rrf")
+            payload["reranker_status"] = getattr(res, "reranker_status", "not_run")
             payload["provisions"] = [
                 {
                     "act": p.act_name,
+                    "short_name": p.short_name,
                     "section": p.section_or_article,
                     "title": p.title,
                     "citation": p.citation,
                     "page": p.page,
+                    "source_file": p.source_file,
                     "reasoning": p.relevance_reasoning,
                 }
                 for p in res.applicable_provisions

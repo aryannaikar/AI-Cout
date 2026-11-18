@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { 
   Gavel, 
   Shield, 
@@ -12,20 +12,23 @@ import {
   Code2,
   Copy,
   Check,
-  Award
+  Award,
+  FileText
 } from 'lucide-react';
-import type { AgentMessage } from '../types/court';
+import type { AgentMessage, ResearchProvisionRef, SideResearchContext } from '../types/court';
 import { getFormattedMessage } from '../utils/courtroomChatFormatters';
 import type { FormattedChatMessage } from '../utils/courtroomChatFormatters';
 
 interface CourtroomChatBubbleProps {
   message: AgentMessage;
   onOpenJudgment?: () => void;
+  sideResearch?: SideResearchContext;
 }
 
 export const CourtroomChatBubble: React.FC<CourtroomChatBubbleProps> = ({
   message,
   onOpenJudgment,
+  sideResearch,
 }) => {
   const [visibleCount, setVisibleCount] = useState(1);
   const { agent, payload, timestamp } = message;
@@ -61,6 +64,7 @@ export const CourtroomChatBubble: React.FC<CourtroomChatBubbleProps> = ({
             timestamp={timestamp}
             isLast={isLastInSequence}
             onOpenJudgment={isLastInSequence ? onOpenJudgment : undefined}
+            sideResearch={sideResearch}
           />
         );
       })}
@@ -97,6 +101,18 @@ interface SingleBubbleProps {
   timestamp?: string;
   isLast: boolean;
   onOpenJudgment?: () => void;
+  sideResearch?: SideResearchContext;
+}
+
+function extractMentionedSections(text: string): string[] {
+  const matches = new Set<string>();
+  const regex = /\b(?:sections?|articles?|§)\s*([0-9]+[a-zA-Z]?(?:\s*(?:,|and|&)\s*[0-9]+[a-zA-Z]?)*)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    const nums = m[1].match(/[0-9]+[a-zA-Z]?/g);
+    if (nums) nums.forEach((n) => matches.add(n.toLowerCase()));
+  }
+  return Array.from(matches);
 }
 
 const SingleBubble: React.FC<SingleBubbleProps> = ({
@@ -105,10 +121,38 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
   payload,
   timestamp,
   isLast,
-  onOpenJudgment
+  onOpenJudgment,
+  sideResearch,
 }) => {
   const [showRawData, setShowRawData] = useState(false);
   const [copiedRaw, setCopiedRaw] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+
+  const isLawyerBubble =
+    agent === 'prosecutor' ||
+    agent === 'live_prosecutor' ||
+    agent === 'defense' ||
+    agent === 'live_defense';
+
+  const hasResearchHover = Boolean(
+    isLawyerBubble &&
+      sideResearch &&
+      (sideResearch.provisions.length > 0 ||
+        sideResearch.webSources.length > 0 ||
+        sideResearch.casePacketPdf),
+  );
+
+  const sortedProvisions = useMemo(() => {
+    if (!sideResearch?.provisions?.length) return [] as Array<{ prov: ResearchProvisionRef; matched: boolean }>;
+    const bubbleText = `${formatted.introText || ''} ${(formatted.bodyParagraphs || []).join(' ')}`;
+    const mentioned = extractMentionedSections(bubbleText);
+    const items = sideResearch.provisions.map((prov) => {
+      const secText = `${prov.section || ''} ${prov.citation || ''}`.toLowerCase();
+      const matched = mentioned.some((num) => new RegExp(`\\b${num}\\b`, 'i').test(secText));
+      return { prov, matched };
+    });
+    return items.sort((a, b) => Number(b.matched) - Number(a.matched));
+  }, [sideResearch, formatted.introText, formatted.bodyParagraphs]);
 
   // Time formatted
   const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
@@ -195,6 +239,8 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
 
   return (
     <div
+      onMouseEnter={() => { if (hasResearchHover) setIsHovered(true); }}
+      onMouseLeave={() => { if (hasResearchHover) setIsHovered(false); }}
       style={{
         alignSelf,
         maxWidth,
@@ -204,8 +250,126 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
         flexDirection: 'column',
         gap: '6px',
         animation: 'fadeIn 0.25s ease-out forwards',
+        position: 'relative',
+        zIndex: isHovered ? 40 : 1,
       }}
     >
+      {/* Floating Research & Source PDF Popover on Hover */}
+      {hasResearchHover && isHovered && sideResearch && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 6px)',
+            ...(isPros ? { right: 0 } : { left: 0 }),
+            width: 'min(460px, 90vw)',
+            background: 'rgba(10, 15, 28, 0.97)',
+            border: `1px solid ${isPros ? 'rgba(96, 165, 250, 0.45)' : 'rgba(52, 211, 153, 0.45)'}`,
+            borderRadius: '10px',
+            padding: '12px 14px',
+            boxShadow: '0 14px 36px rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(12px)',
+            zIndex: 50,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          {/* Popover Header: Research Agent */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <BookOpen size={13} color={isPros ? '#60A5FA' : '#34D399'} />
+              <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#F8FAFC' }}>
+                {sideResearch.legalResearchAgent || (isPros ? 'Prosecution Research' : 'Defense Research')}
+              </span>
+            </div>
+            {sideResearch.retrievalMethod && (
+              <span style={{ fontSize: '0.65rem', color: '#94A3B8', background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: '4px', fontFamily: 'monospace' }}>
+                {sideResearch.retrievalMethod}
+              </span>
+            )}
+          </div>
+
+          {/* Statutory Sections & Source PDFs */}
+          {sortedProvisions.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '210px', overflowY: 'auto' }}>
+              {sortedProvisions.slice(0, 5).map(({ prov, matched }, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    background: matched
+                      ? isPros ? 'rgba(59, 130, 246, 0.14)' : 'rgba(16, 185, 129, 0.14)'
+                      : 'rgba(255, 255, 255, 0.03)',
+                    border: matched
+                      ? `1px solid ${isPros ? 'rgba(96, 165, 250, 0.45)' : 'rgba(52, 211, 153, 0.45)'}`
+                      : '1px solid rgba(255, 255, 255, 0.07)',
+                    borderRadius: '6px',
+                    padding: '6px 8px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: isPros ? '#93C5FD' : '#6EE7B7' }}>
+                      {prov.short_name || prov.act} · {prov.section}
+                    </span>
+                    {matched && (
+                      <span style={{ fontSize: '0.62rem', fontWeight: 700, color: '#FDE68A', background: 'rgba(212, 175, 55, 0.18)', padding: '1px 5px', borderRadius: '4px' }}>
+                        Cited in Message
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '3px', fontSize: '0.71rem', color: '#CBD5E1' }}>
+                    <FileText size={11} color="#94A3B8" style={{ flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {prov.source_file || 'Statutory Corpus PDF'}
+                    </span>
+                    {prov.page ? (
+                      <span style={{ color: '#94A3B8', flexShrink: 0 }}>· Page {prov.page}</span>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Case Packet PDF Context */}
+          {sideResearch.casePacketPdf && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.71rem', color: '#CBD5E1', background: 'rgba(255,255,255,0.03)', padding: '5px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <FileText size={11} color="#FBBF24" style={{ flexShrink: 0 }} />
+              <span style={{ color: '#94A3B8' }}>Case Packet PDF:</span>
+              <span style={{ fontWeight: 600, color: '#F8FAFC', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {sideResearch.casePacketPdf}
+              </span>
+            </div>
+          )}
+
+          {/* Web Precedent Agent */}
+          {sideResearch.webSources.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.71rem', fontWeight: 600, color: '#38BDF8' }}>
+                <Globe size={11} />
+                <span>{sideResearch.webResearchAgent || 'Web Precedent Research'}</span>
+              </div>
+              {sideResearch.webSources.slice(0, 2).map((ws, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', fontSize: '0.7rem', color: '#CBD5E1' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {ws.title}
+                  </span>
+                  {ws.url && (
+                    <a
+                      href={ws.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: 'var(--gold-primary)', display: 'inline-flex', alignItems: 'center', gap: '2px', textDecoration: 'none', flexShrink: 0 }}
+                    >
+                      <span>Link</span>
+                      <ExternalLink size={9} />
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {/* Bubble Container */}
       <div
         style={{
@@ -268,6 +432,26 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {hasResearchHover && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '0.66rem',
+                  fontWeight: 600,
+                  color: isPros ? '#93C5FD' : '#6EE7B7',
+                  background: isPros ? 'rgba(59, 130, 246, 0.14)' : 'rgba(16, 185, 129, 0.14)',
+                  border: `1px solid ${isPros ? 'rgba(96, 165, 250, 0.35)' : 'rgba(52, 211, 153, 0.35)'}`,
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  cursor: 'help',
+                }}
+              >
+                <BookOpen size={10} />
+                <span>Sources</span>
+              </span>
+            )}
             <span style={{ fontSize: '0.72rem', color: '#64748B', whiteSpace: 'nowrap' }}>
               {timeStr}
             </span>

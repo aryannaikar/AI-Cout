@@ -254,6 +254,7 @@ export function App() {
               {/* Live Conversational Courtroom Chat */}
               <CourtroomChat
                 messages={mainMessages}
+                researchMessages={researchMessages}
                 currentAgent={currentAgent}
                 isStreaming={isStreaming}
                 judgment={judgment}

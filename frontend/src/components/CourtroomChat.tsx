@@ -1,10 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Gavel, Award, Scale } from 'lucide-react';
-import type { AgentMessage, Judgment } from '../types/court';
+import type { AgentMessage, Judgment, SideResearchContext } from '../types/court';
 import { CourtroomChatBubble } from './CourtroomChatBubble';
 
 interface CourtroomChatProps {
   messages: AgentMessage[];
+  researchMessages?: AgentMessage[];
   currentAgent: string | null;
   isStreaming: boolean;
   judgment: Judgment | null;
@@ -13,8 +14,66 @@ interface CourtroomChatProps {
   caseTitle?: string;
 }
 
+function parseSourceFileFromCitation(citation?: string): string | undefined {
+  if (!citation) return undefined;
+  const match = citation.match(/Source:\s*([^\]]+)\]/i);
+  return match ? match[1].trim() : undefined;
+}
+
+function buildSideResearch(
+  side: 'prosecution' | 'defense',
+  researchMessages: AgentMessage[],
+  caseTitle?: string,
+): SideResearchContext | undefined {
+  const legalAgent = side === 'prosecution' ? 'prosecutor_legal_research' : 'defense_legal_research';
+  const webAgent = side === 'prosecution' ? 'prosecutor_web_research' : 'defense_web_research';
+
+  const legalMsg = [...researchMessages].reverse().find((m) => m.agent === legalAgent);
+  const webMsg = [...researchMessages].reverse().find((m) => m.agent === webAgent);
+
+  if (!legalMsg && !webMsg && !caseTitle) return undefined;
+
+  const rawProvisions = Array.isArray(legalMsg?.payload?.provisions) ? legalMsg.payload.provisions : [];
+  const provisions = rawProvisions.map((p: any) => ({
+    act: p.act || p.act_name || 'Statute',
+    short_name: p.short_name,
+    section: p.section || p.section_or_article || '',
+    title: p.title,
+    page: p.page,
+    source_file: p.source_file || parseSourceFileFromCitation(p.citation),
+    citation: p.citation,
+    reasoning: p.reasoning,
+  }));
+
+  const rawSources = Array.isArray(webMsg?.payload?.sources) ? webMsg.payload.sources : [];
+  const webSources = rawSources.map((s: any) => ({
+    title: s.title || 'Judicial Precedent',
+    url: s.url,
+    summary: s.summary,
+  }));
+
+  return {
+    side,
+    legalResearchAgent: legalMsg
+      ? side === 'prosecution'
+        ? 'Prosecutor Legal Research (Hybrid RAG)'
+        : 'Defense Legal Research (Hybrid RAG)'
+      : undefined,
+    retrievalMethod: legalMsg?.payload?.retrieval_method,
+    provisions,
+    webResearchAgent: webMsg
+      ? side === 'prosecution'
+        ? 'Prosecutor Web Research'
+        : 'Defense Web Research'
+      : undefined,
+    webSources,
+    casePacketPdf: caseTitle,
+  };
+}
+
 export const CourtroomChat: React.FC<CourtroomChatProps> = ({
   messages,
+  researchMessages = [],
   currentAgent,
   isStreaming,
   judgment,
@@ -23,6 +82,11 @@ export const CourtroomChat: React.FC<CourtroomChatProps> = ({
   caseTitle,
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const sideResearchBySide = useMemo(() => ({
+    prosecution: buildSideResearch('prosecution', researchMessages, caseTitle),
+    defense: buildSideResearch('defense', researchMessages, caseTitle),
+  }), [researchMessages, caseTitle]);
 
   // Auto-scroll to newest message
   useEffect(() => {
@@ -97,13 +161,23 @@ export const CourtroomChat: React.FC<CourtroomChatProps> = ({
       </div>
 
       {/* Main Conversational Stream */}
-      {messages.map((msg) => (
-        <CourtroomChatBubble
-          key={msg.id}
-          message={msg}
-          onOpenJudgment={onOpenJudgment}
-        />
-      ))}
+      {messages.map((msg) => {
+        const isProsAgent = msg.agent === 'prosecutor' || msg.agent === 'live_prosecutor';
+        const isDefAgent = msg.agent === 'defense' || msg.agent === 'live_defense';
+        const sideResearch = isProsAgent
+          ? sideResearchBySide.prosecution
+          : isDefAgent
+            ? sideResearchBySide.defense
+            : undefined;
+        return (
+          <CourtroomChatBubble
+            key={msg.id}
+            message={msg}
+            onOpenJudgment={onOpenJudgment}
+            sideResearch={sideResearch}
+          />
+        );
+      })}
 
       {/* Real-time Typing Indicator */}
       {isStreaming && typingInfo && (
