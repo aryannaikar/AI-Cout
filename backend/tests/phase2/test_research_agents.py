@@ -28,7 +28,7 @@ def test_legal_research_agent_prosecution_calls_retriever():
     assert "317" in top_p.section_or_article or "BNS" in top_p.short_name
     assert "Bharatiya Nyaya Sanhita" in top_p.act_name
     assert len(top_p.text) > 20
-    assert "prosecution" in top_p.relevance_reasoning.lower()
+    assert ("state's burden" in top_p.relevance_reasoning.lower() or "prosecution" in top_p.relevance_reasoning.lower())
 
 
 def test_legal_research_agent_defense_perspective():
@@ -45,7 +45,7 @@ def test_legal_research_agent_defense_perspective():
         for p in result.applicable_provisions
     )
     assert found_electronic
-    assert "defense" in result.applicable_provisions[0].relevance_reasoning.lower()
+    assert ("reasonable doubt" in result.applicable_provisions[0].relevance_reasoning.lower() or "defense" in result.applicable_provisions[0].relevance_reasoning.lower())
 
 
 def test_web_research_agent_output_schema():

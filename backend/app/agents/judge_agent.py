@@ -455,6 +455,29 @@ class JudgeAgent:
                     covered.add(subj.strip().casefold())
             updates["accused_findings"] = acc_findings
 
+        # Reconcile issue-level judicial_finding with accused_findings when issues name distinct accused
+        final_acc_findings = updates.get("accused_findings", acc_findings)
+        if final_acc_findings and issue_analyses:
+            convicted_names = [
+                af.accused_name.strip()
+                for af in final_acc_findings
+                if af.accused_name and cls._normalize_final_decision(af.finding) == "CONVICTION"
+            ]
+            acquitted_names = [
+                af.accused_name.strip()
+                for af in final_acc_findings
+                if af.accused_name and cls._normalize_final_decision(af.finding) == "ACQUITTAL"
+            ]
+            for a in issue_analyses:
+                stmt = a.issue_statement or ""
+                matched_conv = any(re.search(rf"\b{re.escape(n)}\b", stmt, re.IGNORECASE) for n in convicted_names)
+                matched_acq = any(re.search(rf"\b{re.escape(n)}\b", stmt, re.IGNORECASE) for n in acquitted_names)
+                if matched_conv and not matched_acq:
+                    a.judicial_finding = "PROVED"
+                elif matched_acq and not matched_conv:
+                    a.judicial_finding = "NOT PROVED"
+            updates["issue_analyses"] = issue_analyses
+
         # Individualize witness_assessment: list any witness IDs from case.witnesses omitted in text
         witness_text = updates.get("witness_assessment", judgment.witness_assessment) or ""
         missing_w_lines: list[str] = []
@@ -634,15 +657,20 @@ class JudgeAgent:
                 raise ValueError(f"Judge cited legal authority absent from supplied research or charges: {citation}")
 
         if case.charges:
-            expected_raw = [
-                f"{charge.statute}, {charge.section}" for charge in case.charges
-                if charge.record_status == "current"
-                and (
-                    not case.decision_subject
-                    or charge.accused_name.casefold() == case.decision_subject.casefold()
-                    or charge.accused_name.casefold() in {"accused", "all accused", "petitioners"}
-                )
-            ]
+            expected_charges = (
+                case.current_charges()
+                if hasattr(case, "current_charges")
+                else [
+                    charge for charge in case.charges
+                    if charge.record_status == "current"
+                    and (
+                        not case.decision_subject
+                        or charge.accused_name.casefold() == case.decision_subject.casefold()
+                        or charge.accused_name.casefold() in {"accused", "all accused", "petitioners"}
+                    )
+                ]
+            )
+            expected_raw = [f"{charge.statute}, {charge.section}" for charge in expected_charges]
             expected = list(dict.fromkeys(k.casefold() for k in expected_raw))
             actual = list(judgment.findings_per_charge)
             if len(actual) != len({key.casefold() for key in actual}):

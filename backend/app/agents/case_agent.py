@@ -114,7 +114,26 @@ class CaseUnderstandingAgent:
 
     @staticmethod
     def _post_process_case(case: StructuredCase, case_text: str) -> StructuredCase:
-        """Refine charge status and connected-proceeding scope using explicit procedural cues."""
+        """Refine charge status, case title, and connected-proceeding scope using explicit procedural cues."""
+        if not (case.case_title or "").strip():
+            title_match = re.search(
+                r"\b(?:State\s+(?:of\s+[A-Za-z]+\s+)?v\.?\s+[A-Za-z0-9.\s,&]+|[A-Za-z][A-Za-z0-9.\s,&]{2,40}\s+v\.?\s+State(?:\s+of\s+[A-Za-z]+)?)\b",
+                case_text[:2500],
+                re.IGNORECASE,
+            )
+            if title_match:
+                case.case_title = re.sub(r"\s+", " ", title_match.group(0)).strip()
+            elif case.accused:
+                case.case_title = (
+                    f"{case.accused[0]} & Ors. v. State"
+                    if len(case.accused) > 1
+                    else f"{case.accused[0]} v. State"
+                )
+            elif (case.court_identifier or "").strip():
+                case.case_title = case.court_identifier.strip()
+            else:
+                case.case_title = "Criminal Proceeding on Record"
+
         if len(case.connected_proceedings) > 1:
             case.decision_subject = None
 

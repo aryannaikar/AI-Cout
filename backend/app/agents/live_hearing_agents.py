@@ -70,17 +70,27 @@ def extract_grounded_case_context(
     defense: Optional[DefenseCase] = None,
 ) -> Dict[str, Any]:
     """Extracts factual matrix and strict evidentiary bounds directly from case materials."""
-    case_title = case.case_title if case and case.case_title else "Jai Bhagwan & Ors. v. State of Haryana"
-    court_id = case.court_identifier if case and case.court_identifier else "FIR No. 50/2002, PS Mohana"
-    accused = ", ".join(case.accused) if case and case.accused else "Kailash, Jai Bhagwan"
-    
+    raw_title = (case.case_title or "").strip() if case else ""
+    if raw_title:
+        case_title = raw_title
+    elif case and case.accused:
+        case_title = f"{case.accused[0]} & Ors. v. State" if len(case.accused) > 1 else f"{case.accused[0]} v. State"
+    elif case and (case.court_identifier or "").strip():
+        case_title = case.court_identifier.strip()
+    else:
+        case_title = "Present Criminal Proceeding"
+
+    court_id = (
+        case.court_identifier.strip()
+        if case and (case.court_identifier or "").strip()
+        else "Trial / Appellate Proceeding on Record"
+    )
+    accused = ", ".join(case.accused) if case and case.accused else "Accused / Petitioner(s)"
+
     allegations = (
         case.allegations_summary
         if case and case.allegations_summary
-        else (
-            "Appellants were alleged to be in possession of a stolen Tata Indica car bearing fake number plates (Ex.P1 & Ex.P2) "
-            "and an unlicensed country-made pistol (Ex.P3), connected to reported robbery under FIR No. 149/2002 PS Sadar Rohtak."
-        )
+        else "Allegations as set forth in the supplied case packet."
     )
 
     witnesses = []
@@ -88,24 +98,14 @@ def extract_grounded_case_context(
         for w in case.witnesses:
             witnesses.append(f"{w.witness_id} ({w.witness_name}): {w.testimony_summary or 'Deposed on case facts'}")
     else:
-        witnesses = [
-            "PW-1 (Om Parkash): First informant regarding theft of Indica vehicle.",
-            "PW-6 (Gurnam Singh): Witness who identified the Indica car for the first time in court without a prior TIP.",
-            "PW-7 (Inspector Lachman Singh): Intercepting police officer who effected recovery under seizure memo Ex.PB."
-        ]
+        witnesses = ["No witnesses extracted from case packet."]
 
     exhibits = []
     if case and case.exhibits:
         for e in case.exhibits:
             exhibits.append(f"{e.exhibit_id}: {e.title}")
     else:
-        exhibits = [
-            "Ex.PB: Seizure memo of Indica car and country-made pistol",
-            "Ex.P1 & Ex.P2: Recovered fake number plates",
-            "Ex.P3: Recovered country-made pistol",
-            "Ex.PG: Identification memo of car by PW-6 Gurnam Singh",
-            "Ex.PK: Copy of FIR No. 149/2002 PS Sadar Rohtak"
-        ]
+        exhibits = ["No exhibits extracted from case packet."]
 
     charges = []
     if case and case.charges:
@@ -301,7 +301,7 @@ class LiveProsecutorAgent:
         unresolved_argument: Optional[str] = None,
     ) -> LawyerAction:
         ctx = extract_grounded_case_context(case, prosecution=prosecution)
-        issue = active_issue or "Recovery and possession of stolen vehicle"
+        issue = active_issue or "The statutory ingredients and evidentiary proof of the charged offences"
         prev_spk = previous_speaker or (transcript[-1]["role"] if transcript else "judge")
         prev_msg = previous_message or (transcript[-1]["content"] if transcript else "")
 
@@ -399,7 +399,7 @@ class LiveDefenseAgent:
         unresolved_argument: Optional[str] = None,
     ) -> LawyerAction:
         ctx = extract_grounded_case_context(case, defense=defense)
-        issue = active_issue or "Recovery and possession of stolen vehicle"
+        issue = active_issue or "The statutory ingredients and evidentiary proof of the charged offences"
         prev_spk = previous_speaker or (transcript[-1]["role"] if transcript else "prosecutor")
         prev_msg = previous_message or (transcript[-1]["content"] if transcript else "")
 
@@ -495,7 +495,11 @@ class LiveEvidenceAgent:
         transcript: List[Dict[str, Any]],
         active_issue: Optional[str],
     ) -> LawyerAction:
-        fallback_msg = "The case record shows that seizure memo Ex.PB was prepared only by police officers, with no independent civilian present to confirm the recovery."
+        fallback_msg = (
+            evidence_analysis.summary
+            if evidence_analysis and (evidence_analysis.summary or "").strip()
+            else "The evidentiary record relies on the marked exhibits and witness testimonies extracted from the case packet."
+        )
         return LawyerAction(message=fallback_msg, next_speaker="judge")
 
 
@@ -509,5 +513,9 @@ class LiveConflictAgent:
         transcript: List[Dict[str, Any]],
         active_issue: Optional[str],
     ) -> LawyerAction:
-        fallback_msg = "There is a clear contradiction on record between the time the secret information was received and the time of interception recorded in Ex.PB."
+        fallback_msg = (
+            conflict_report.summary
+            if conflict_report and (conflict_report.summary or "").strip()
+            else "The factual and evidentiary conflicts identified between the prosecution and defence submissions require judicial determination."
+        )
         return LawyerAction(message=fallback_msg, next_speaker="judge")
