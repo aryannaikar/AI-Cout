@@ -141,6 +141,10 @@ class ComparisonService:
         real_norm = JudgmentNormalizer.normalize_real_judgment(real_input)
         identity_validation = self._validate_case_identity(ai_norm, real_norm)
 
+        # Kept in memory only so the read-only "Understand the Difference" explainer can reuse
+        # the already-normalised judgments without re-parsing the uploaded files.
+        self.last_context = {"ai": ai_norm, "real": real_norm, "packet_text": packet_text}
+
         comparator = JudgmentComparator(case_packet_context=packet_text)
         (
             verdict_comp,

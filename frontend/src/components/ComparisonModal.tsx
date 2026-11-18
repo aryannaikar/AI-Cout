@@ -12,8 +12,11 @@ import {
   FileCode,
   ArrowRight,
   ShieldCheck,
+  Lightbulb,
+  ArrowLeft,
 } from 'lucide-react';
 import type { ComparisonReport, Judgment } from '../types/court';
+import { UnderstandDifferencePanel } from './UnderstandDifferencePanel';
 
 interface ComparisonModalProps {
   caseId: string;
@@ -26,6 +29,8 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ComparisonReport | null>(null);
+  const [showExplain, setShowExplain] = useState(false);
+  const [explainOpened, setExplainOpened] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -144,6 +149,32 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {report && (
               <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExplainOpened(true);
+                    setShowExplain((v) => !v);
+                  }}
+                  title="Explain, in simple words, why the two judgments differ"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '7px',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '0.84rem',
+                    fontWeight: 700,
+                    color: showExplain ? '#0A0E17' : 'var(--gold-primary)',
+                    background: showExplain
+                      ? 'linear-gradient(135deg, var(--gold-primary) 0%, #B8860B 100%)'
+                      : 'rgba(212, 175, 55, 0.14)',
+                    border: '1px solid var(--gold-primary)',
+                  }}
+                >
+                  {showExplain ? <ArrowLeft size={15} /> : <Lightbulb size={15} />}
+                  <span>{showExplain ? 'Back to Report' : 'Understand the Difference'}</span>
+                </button>
                 <a
                   href={`/api/cases/${caseId}/comparison/download/txt`}
                   download
@@ -304,8 +335,15 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
             </div>
           )}
 
+          {/* Understand the Difference (plain-language explanation, read-only) */}
+          {report && explainOpened && (
+            <div style={{ display: showExplain ? 'block' : 'none' }}>
+              <UnderstandDifferencePanel caseId={caseId} report={report} />
+            </div>
+          )}
+
           {/* Report Results View */}
-          {report && (
+          {report && !showExplain && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               
               {/* Executive Summary Cards */}
@@ -719,6 +757,8 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
                   onClick={() => {
                     setReport(null);
                     setFile(null);
+                    setShowExplain(false);
+                    setExplainOpened(false);
                   }}
                   className="btn-secondary"
                 >

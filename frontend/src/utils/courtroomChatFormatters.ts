@@ -15,6 +15,24 @@ export interface FormattedChatMessage {
   chips?: { label: string; value: string | number; color?: string }[];
   metadataBadge?: string;
   isJudge?: boolean;
+  mlPanel?: MLInsightPanel;
+}
+
+export interface MLInsightPanel {
+  kind: 'statute' | 'defect';
+  title: string;
+  subtitle: string;
+  modelFacts: string[];
+  pipeline: string[];
+  items: { label: string; score?: number; note?: string }[];
+  usedBy: string[];
+}
+
+function parseScoredLabel(raw: string): { label: string; score?: number } {
+  const m = raw.match(/^(.*?)\s*\((\d?\.\d+|\d+)\)\s*$/);
+  if (!m) return { label: raw };
+  const val = parseFloat(m[2]);
+  return { label: m[1].trim(), score: Number.isFinite(val) ? val : undefined };
 }
 
 const PLACEHOLDER_PRECEDENT_URLS = new Set([
@@ -69,12 +87,29 @@ export function formatCaseUnderstanding(payload: any): FormattedChatMessage[] {
     bodyParagraphs: [summary],
     chips,
     metadataBadge: mlCaseType ? `ML Docket: ${mlCaseType.split(' ')[0]}` : undefined,
-    substantiveItems: mlPredictedStatutes.length > 0
-      ? [{
-          label: 'Stage-0 ML Statutory & Companion Predictions',
-          text: mlPredictedStatutes.join(' • '),
-          tag: 'ML Predictor',
-        }]
+    mlPanel: mlPredictedStatutes.length > 0
+      ? {
+          kind: 'statute',
+          title: 'Machine Learning Engine #1 — Statutory & Companion-Section Predictor',
+          subtitle: 'Automatically suggests which laws apply, before any lawyer or judge speaks.',
+          modelFacts: [
+            'Model: TF-IDF text features + calibrated linear classifier (scikit-learn)',
+            'Trained on 10,009 real Supreme Court of India judgments',
+            'Covers 38 statutory sections (IPC, CrPC, Evidence Act, NDPS, PC Act, etc.)',
+          ],
+          pipeline: [
+            'Case packet text is read at intake (Stage-0)',
+            'Model scores every section with a confidence value (0–1)',
+            'Sections above 35% confidence are kept',
+            'Passed on to Legal Research, Prosecutor, Defense and Judge',
+          ],
+          items: mlPredictedStatutes.map((s) => parseScoredLabel(s)),
+          usedBy: [
+            'Legal Research Agent: searches statute PDFs for these sections',
+            'Special-Act guard: prevents IPC leakage into NDPS/PMLA cases',
+            'Prosecutor & Defense: cite the retrieved provisions',
+          ],
+        }
       : undefined,
   });
 
@@ -346,6 +381,12 @@ export function formatEvidence(payload: any): FormattedChatMessage[] {
     });
   });
 
+  const chainAudit: string[] = Array.isArray(payload.theft_recovery_chain_audit) ? payload.theft_recovery_chain_audit : [];
+  const panelItems = [
+    ...mlDefects.map((d) => ({ ...parseScoredLabel(d), note: 'Detected defect' })),
+    ...chainAudit.map((c) => ({ label: c, note: '5-link recovery chain' })),
+  ];
+
   return [{
     speakerName: 'Evidence Analysis Agent',
     roleBadge: 'FORENSIC APPRAISAL',
@@ -357,6 +398,29 @@ export function formatEvidence(payload: any): FormattedChatMessage[] {
     ].filter(Boolean),
     substantiveItems,
     metadataBadge: `${items.length} Exhibits Appraised`,
+    mlPanel: panelItems.length > 0
+      ? {
+          kind: 'defect',
+          title: 'Machine Learning Engine #2 — Evidentiary Defect Classifier',
+          subtitle: 'Scans the evidence for weaknesses that commonly lead to acquittal in Indian courts.',
+          modelFacts: [
+            'Model: TF-IDF + one-vs-rest classifier combined with legal rule patterns',
+            'Trained on 10,009 judgments + curated criminal-law anchors',
+            'Detects 8 defect types (no independent panch, generic recovery, no TIP, missing 65B, etc.)',
+          ],
+          pipeline: [
+            'Exhibits and witness statements are read',
+            'Classifier flags evidentiary defects',
+            'Deterministic 5-link theft & recovery chain audit runs',
+            'Findings are handed to Defense and Judge',
+          ],
+          items: panelItems,
+          usedBy: [
+            'Defense Agent: turns defects into case-law backed arguments',
+            'Judge Agent: weighs red flags in the reasonable-doubt assessment',
+          ],
+        }
+      : undefined,
   }];
 }
 

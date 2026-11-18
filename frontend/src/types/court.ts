@@ -126,6 +126,39 @@ export interface ComparisonScores {
   scoring_formula?: string;
 }
 
+export type DifferenceBasis = "from_judgments" | "ai_analysis" | "information_unavailable";
+
+export interface DifferenceItem {
+  category: "evidence" | "witnesses" | "legal_rules" | "investigation" | "missing_information" | "reasoning";
+  title: string;
+  ai_view: string;
+  real_court_view: string;
+  why_different: string;
+  basis: DifferenceBasis;
+}
+
+export interface DifferenceExplanation {
+  simple_summary: string;
+  main_reasons: string[];
+  analogy: string;
+  case_id?: string;
+  case_title: string;
+  verdicts_differ: boolean | null;
+  ai_verdict: string;
+  real_verdict: string;
+  why_judgments_differ: string;
+  ai_court_concluded: string;
+  real_court_concluded: string;
+  key_differences: DifferenceItem[];
+  how_it_led_to_different_verdicts: string;
+  what_we_can_learn: string;
+  legal_terms: { term: string; meaning: string }[];
+  unavailable_information: string[];
+  generated_by: "llm" | "deterministic_fallback";
+  model_note: string;
+  disclaimer: string;
+}
+
 export interface ComparisonReport {
   comparison_id: string;
   case_id?: string;

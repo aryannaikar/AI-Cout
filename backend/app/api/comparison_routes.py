@@ -24,6 +24,7 @@ from app.comparison.errors import (
     InvalidJudgmentFormatError,
     RealJudgmentNotFoundError,
 )
+from app.comparison.explainer import DifferenceExplanationResponse, explain_differences
 from app.comparison.schemas import ComparisonReport
 from app.comparison.report_generator import ComparisonReportGenerator
 from app.comparison.service import ComparisonService
@@ -34,6 +35,13 @@ router = APIRouter()
 # Reports are deliberately session-local: download routes expose the generated
 # comparison, never the uploaded ground-truth document, and write no case data.
 _reports_by_case_id: dict[str, ComparisonReport] = {}
+# Normalised judgments kept only to feed the read-only difference explainer.
+_context_by_case_id: dict[str, dict] = {}
+
+
+class ExplainDifferenceRequest(BaseModel):
+    """Optional body: lets the client resend its report if the server session was restarted."""
+    report: Optional[ComparisonReport] = None
 
 
 @router.post("/cases/{case_id}/compare", response_model=ComparisonReport)
@@ -66,6 +74,7 @@ async def post_trial_compare(
             case_packet_source=packet_bytes,
         )
         _reports_by_case_id[case_id] = report
+        _context_by_case_id[case_id] = dict(getattr(service, "last_context", {}) or {})
         return report
     except AIJudgmentNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -110,6 +119,7 @@ async def manual_standalone_compare(
             case_packet_source=packet_bytes,
         )
         _reports_by_case_id[report.case_id] = report
+        _context_by_case_id[report.case_id] = dict(getattr(service, "last_context", {}) or {})
         return report
     except InvalidJudgmentFormatError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
@@ -118,6 +128,37 @@ async def manual_standalone_compare(
     except Exception as e:
         logger.exception("Unexpected error during manual comparison: %s", e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.post("/cases/{case_id}/comparison/explain", response_model=DifferenceExplanationResponse)
+def explain_comparison_difference(
+    case_id: str,
+    body: Optional[ExplainDifferenceRequest] = None,
+) -> DifferenceExplanationResponse:
+    """
+    "Understand the Difference": plain-language explanation of why the AI Court and the real
+    court differ. Read-only — it never regenerates or alters either judgment or the report.
+    """
+    report = _reports_by_case_id.get(case_id) or (body.report if body else None)
+    if report is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No comparison report is available for this case. Run the comparison first.",
+        )
+    ctx = _context_by_case_id.get(case_id) or {}
+    try:
+        return explain_differences(
+            report=report,
+            ai_judgment=ctx.get("ai"),
+            real_judgment=ctx.get("real"),
+            packet_text=ctx.get("packet_text"),
+        )
+    except Exception as e:
+        logger.exception("Difference explanation failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not generate the explanation right now. Please try again.",
+        )
 
 
 def _report_for_download(case_id: str) -> ComparisonReport:

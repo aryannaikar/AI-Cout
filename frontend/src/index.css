@@ -709,3 +709,5 @@ select:focus-visible {
     opacity: 1 !important;
   }
 }
+
+@keyframes spin { to { transform: rotate(360deg); } }

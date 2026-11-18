@@ -18,6 +18,7 @@ import {
 import type { AgentMessage, ResearchProvisionRef, SideResearchContext } from '../types/court';
 import { getFormattedMessage, resolvePrecedentUrl } from '../utils/courtroomChatFormatters';
 import type { FormattedChatMessage } from '../utils/courtroomChatFormatters';
+import { MLInsightCard } from './MLInsightCard';
 
 interface CourtroomChatBubbleProps {
   message: AgentMessage;
@@ -578,6 +579,9 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
             {renderTextWithStatuteChips(para)}
           </p>
         ))}
+
+        {/* ML Insight Panel (explains how the ML models work and are used) */}
+        {formatted.mlPanel && <MLInsightCard panel={formatted.mlPanel} />}
 
         {/* Substantive Submissions / Cards */}
         {formatted.substantiveItems && formatted.substantiveItems.length > 0 && (
