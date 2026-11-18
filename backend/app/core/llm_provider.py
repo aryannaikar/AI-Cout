@@ -176,6 +176,21 @@ def _extract_json_payload(content: str) -> dict[str, Any]:
         raise
 
 
+def _compact_schema_for_llm(response_schema: Type[BaseModel]) -> str:
+    """Serialize response_schema, stripping post-computed Judgment fields to avoid token overflow."""
+    schema_dict = response_schema.model_json_schema()
+    if response_schema.__name__ == "Judgment":
+        props = schema_dict.get("properties")
+        if isinstance(props, dict):
+            props.pop("ingredient_checklists", None)
+            props.pop("scrutiny_report", None)
+        defs = schema_dict.get("$defs")
+        if isinstance(defs, dict):
+            for k in ("IngredientChecklist", "IngredientItem", "DevilsAdvocateReport", "ScrutinyChallenge"):
+                defs.pop(k, None)
+    return json.dumps(schema_dict, indent=2)
+
+
 class OllamaLLMClient(BaseLLMClient):
     """
     Ollama Local LLM Provider.
@@ -248,7 +263,7 @@ class OllamaLLMClient(BaseLLMClient):
         system_prompt: str = "",
         fallback_data: Optional[dict[str, Any]] = None,
     ) -> T:
-        schema_json = json.dumps(response_schema.model_json_schema(), indent=2)
+        schema_json = _compact_schema_for_llm(response_schema)
         instruction = (
             f"{prompt}\n\n"
             f"CRITICAL: You must return ONLY a JSON object that strictly adheres to this JSON schema:\n"
@@ -383,7 +398,7 @@ class NvidiaLLMClient(BaseLLMClient):
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        schema_json = json.dumps(response_schema.model_json_schema(), indent=2)
+        schema_json = _compact_schema_for_llm(response_schema)
         instruction = (
             f"{prompt}\n\n"
             f"CRITICAL: Return ONLY a valid JSON DATA INSTANCE populated with the extracted values.\n"
@@ -622,7 +637,7 @@ class OpenRouterLLMClient(BaseLLMClient):
             raise ValueError("OPENROUTER_API_KEY is required for OpenRouter provider.")
 
         agent_name = self._infer_agent_name(system_prompt, prompt)
-        schema_json = json.dumps(response_schema.model_json_schema(), indent=2)
+        schema_json = _compact_schema_for_llm(response_schema)
         instruction = (
             f"{prompt}\n\n"
             f"CRITICAL INSTRUCTION: You must return ONLY a JSON object that adheres strictly to this schema:\n"
@@ -840,7 +855,7 @@ class GeminiLLMClient(BaseLLMClient):
         system_prompt: str = "",
         fallback_data: Optional[dict[str, Any]] = None,
     ) -> T:
-        schema_json = json.dumps(response_schema.model_json_schema(), indent=2)
+        schema_json = _compact_schema_for_llm(response_schema)
         full_prompt = (
             f"{prompt}\n\n"
             f"CRITICAL INSTRUCTION: Return ONLY a valid JSON object matching this exact schema. "

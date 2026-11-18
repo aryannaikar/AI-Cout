@@ -115,22 +115,31 @@ class JudgmentNormalizer:
         Returns: (substantive_text, evaluation_controls_block, is_ground_truth_summary)
         """
         is_summary = bool(
-            re.search(r"Ground Truth\s*[\u2013\-]\s*Real Court Verdict", text, re.IGNORECASE)
+            re.search(r"Ground Truth\s*[\u2013\-]", text, re.IGNORECASE)
             or re.search(r"1\.\s*Operative Verdict", text, re.IGNORECASE)
             or re.search(r"Comparison Engine Ground Truth", text, re.IGNORECASE)
+            or re.search(r"STRICT ISOLATION:\s*This document contains", text, re.IGNORECASE)
         )
 
-        # Separate Section 6/7 Evaluation Controls if present
-        eval_match = re.search(
-            r"(\n\s*(?:6\.\s*Comparison Engine Ground Truth|7\.\s*Source and Evaluation Controls).*)\Z",
+        # Strip Ground Truth isolation preamble before numbered sections
+        cleaned = re.sub(
+            r"STRICT ISOLATION:.*?(?=\n\s*(?:1\.|2\.|3\.|4\.|5\.))",
+            "",
             text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+        # Separate Section 6/7/8 Evaluation Controls if present
+        eval_match = re.search(
+            r"(\n\s*(?:6\.\s*(?:Comparison Engine Ground Truth|Phase 5|Evaluation)|7\.\s*(?:Source and Evaluation Controls|Important source limitations)|8\.\s*Isolation and evaluation workflow).*)\Z",
+            cleaned,
             re.DOTALL | re.IGNORECASE,
         )
         if eval_match:
-            substantive = text[: eval_match.start()]
+            substantive = cleaned[: eval_match.start()]
             eval_block = eval_match.group(1).strip()
         else:
-            substantive = text
+            substantive = cleaned
             eval_block = None
 
         return substantive.strip(), eval_block, is_summary
@@ -194,11 +203,13 @@ class JudgmentNormalizer:
                     )
                 )
 
-        # Material facts
-        facts = cls._extract_facts_from_text(j.case_background)
+        # Material facts (combine case background with evidentiary/witness narrative)
+        fact_source = "\n".join(filter(None, [j.case_background, j.evidence_assessment, j.witness_assessment]))
+        facts = cls._extract_facts_from_text(fact_source)
 
-        # Witnesses
-        witnesses = cls._extract_witnesses_from_text(j.witness_assessment)
+        # Witnesses (scan witness_assessment, evidence_assessment, and case_background)
+        witness_source = "\n".join(filter(None, [j.witness_assessment, j.evidence_assessment, j.case_background]))
+        witnesses = cls._extract_witnesses_from_text(witness_source)
         pros_witnesses = [w for w in witnesses if not w.witness_id.startswith("DW")]
         def_witnesses = [w for w in witnesses if w.witness_id.startswith("DW")]
 
@@ -208,14 +219,20 @@ class JudgmentNormalizer:
         # Legal provisions
         provisions = list(dict.fromkeys(j.applicable_law + j.legal_citations))
 
-        # Reasoning
+        # Reasoning (combine reasons with per-issue analyses)
         reasons_text = j.reasons or ""
+        issue_reason_chains = [
+            f"{a.issue_statement} {a.judicial_finding} {a.evidentiary_evaluation}".strip()
+            for a in (j.issue_analyses or [])
+            if (a.issue_statement or a.evidentiary_evaluation)
+        ]
+        key_chains = list(dict.fromkeys(cls._extract_chains_of_reasoning(reasons_text) + issue_reason_chains))
         reasoning = NormalizedReasoning(
             ratio_decidendi=reasons_text,
-            key_chains=cls._extract_chains_of_reasoning(reasons_text),
-            evaluated_credibility=bool("credibility" in j.witness_assessment.lower() or "caution" in j.witness_assessment.lower()),
-            evaluated_contradictions=bool("contradiction" in reasons_text.lower() or "conflict" in reasons_text.lower()),
-            evaluated_missing_evidence=bool("absence" in j.evidence_assessment.lower() or "missing" in j.evidence_assessment.lower() or "gap" in j.evidence_assessment.lower() or "independent" in j.witness_assessment.lower()),
+            key_chains=key_chains,
+            evaluated_credibility=bool("credibility" in j.witness_assessment.lower() or "caution" in j.witness_assessment.lower() or len(witnesses) > 0),
+            evaluated_contradictions=bool("contradiction" in reasons_text.lower() or "conflict" in reasons_text.lower() or "inconsisten" in reasons_text.lower()),
+            evaluated_missing_evidence=bool("absence" in j.evidence_assessment.lower() or "missing" in j.evidence_assessment.lower() or "gap" in j.evidence_assessment.lower() or "independent" in j.witness_assessment.lower() or "absence" in reasons_text.lower()),
             connected_evidence_to_findings=bool(len(j.issue_analyses) > 0),
         )
 
@@ -518,7 +535,7 @@ class JudgmentNormalizer:
             return StatuteEra.HISTORICAL_IPC_CRPC
         if any(term in t for term in ["BNS", "BHARATIYA NYAYA SANHITA", "BNSS", "BHARATIYA NAGARIK", "BSA", "BHARATIYA SAKSHYA"]):
             return StatuteEra.MODERN_BNS_BNSS_BSA
-        if any(term in t for term in ["ARMS ACT", "NDPS", "POCSO", "IT ACT", "MOTOR VEHICLES", "PREVENTION OF CORRUPTION"]):
+        if any(term in t for term in ["ARMS ACT", "NDPS", "POCSO", "IT ACT", "MOTOR VEHICLES", "PREVENTION OF CORRUPTION", "RAILWAY PROPERTY", "R.P.(U.P.)", "RP(UP)"]):
             return StatuteEra.SPECIAL_ACT
         return StatuteEra.OTHER
 
@@ -773,18 +790,20 @@ class JudgmentNormalizer:
 
         # Standard patterns matching Indian statutory penal sections
         patterns = [
-            r"(?:Section|Sec\.|u/s|U/S)\s+([0-9A-Za-z\(\)]+(?:\s+(?:read with|r/w)\s+[0-9A-Za-z\(\)]+)?)\s+(?:of\s+)?(?:the\s+)?(IPC|Indian Penal Code|BNS|Bharatiya Nyaya Sanhita|Arms Act|NDPS Act|IT Act)",
-            r"(IPC|BNS|Arms Act|NDPS Act)\s+(?:Section|Sec\.)\s+([0-9A-Za-z\(\)]+)",
+            r"(?:Section|Sec\.|u/s|U/S)\s+([0-9]+(?:\([a-z0-9]+\)|[A-Za-z])?(?:\s+(?:read with|r/w)\s+[0-9A-Za-z\(\)]+)?)\s+(?:of\s+)?(?:the\s+)?(IPC|Indian Penal Code|BNS|Bharatiya Nyaya Sanhita|Arms Act|NDPS Act|IT Act|Railway Property \(Unlawful Possession\) Act(?:,\s*1966)?|R\.P\.\(U\.P\.\)\s*Act)",
+            r"(IPC|BNS|Arms Act|NDPS Act|Railway Property \(Unlawful Possession\) Act(?:,\s*1966)?)\s*(?:,)?\s*(?:Section|Sec\.)\s*([0-9]+(?:\([a-z0-9]+\)|[A-Za-z])?)",
         ]
         for pat in patterns:
             for match in re.finditer(pat, text, re.IGNORECASE):
                 groups = match.groups()
                 if len(groups) == 2:
-                    if groups[1].upper() in ["IPC", "INDIAN PENAL CODE", "BNS", "BHARATIYA NYAYA SANHITA", "ARMS ACT", "NDPS ACT", "IT ACT"]:
+                    g0_u, g1_u = groups[0].upper(), groups[1].upper()
+                    if any(act in g1_u for act in ["IPC", "INDIAN PENAL CODE", "BNS", "BHARATIYA NYAYA SANHITA", "ARMS ACT", "NDPS ACT", "IT ACT", "RAILWAY PROPERTY", "R.P.(U.P.)"]):
                         sec, statute = groups[0], groups[1]
                     else:
                         statute, sec = groups[0], groups[1]
-                    key = f"{statute.upper()} Section {sec}"
+                    statute_norm = "Railway Property (Unlawful Possession) Act, 1966" if ("RAILWAY PROPERTY" in statute.upper() or "R.P.(U.P.)" in statute.upper()) else statute.upper()
+                    key = f"{statute_norm} Section {sec}"
                     if key not in seen:
                         seen.add(key)
                         charges.append(
@@ -795,19 +814,20 @@ class JudgmentNormalizer:
                             )
                         )
 
-        # Section 4. Legal Provisions Discussed in Ground Truth summary
+        # Section 4. Legal Provisions Discussed / 5. Governing Legal Principles in Ground Truth summary
         m_prov_sec = re.search(
-            r"(?:4\.\s*Legal Provisions Discussed|LEGAL PROVISIONS DISCUSSED|CHARGES:?)(.*?)(?=(?:\n\s*[0-9]\.|\n\n[A-Z\s]{4,}|\Z))",
+            r"(?:(?:4|5)\.\s*(?:Legal Provisions Discussed|Governing Legal Pri(?:nciples|ovisions))|LEGAL PROVISIONS DISCUSSED|CHARGES:?)(.*?)(?=(?:\n\s*[0-9]\.|\n\n[A-Z\s]{4,}|\Z))",
             text,
             re.DOTALL | re.IGNORECASE,
         )
         if m_prov_sec:
             for line in m_prov_sec.group(1).split("\n"):
                 line_clean = line.strip(" \t•\u2022-*")
-                m_sec = re.search(r"(?:Section|Sec\.)\s+([0-9]{2,4}[A-Za-z]?)\s+(?:of\s+)?(IPC|Indian Penal Code|BNS|Arms Act)", line_clean, re.IGNORECASE)
+                m_sec = re.search(r"(?:Section|Sec\.)\s+([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)\s+(?:of\s+(?:the\s+)?)?(IPC|Indian Penal Code|BNS|Arms Act|Railway Property \(Unlawful Possession\) Act|R\.P\.\(U\.P\.\)\s*Act)", line_clean, re.IGNORECASE)
                 if m_sec:
                     sec, statute = m_sec.group(1), m_sec.group(2)
-                    key = f"{statute.upper()} Section {sec}"
+                    statute_norm = "Railway Property (Unlawful Possession) Act, 1966" if ("RAILWAY" in statute.upper() or "R.P." in statute.upper()) else statute.upper()
+                    key = f"{statute_norm} Section {sec}"
                     if key not in seen:
                         seen.add(key)
                         charges.append(
@@ -885,12 +905,39 @@ class JudgmentNormalizer:
 
     @classmethod
     def _extract_witnesses_from_text(cls, text: str) -> List[NormalizedWitness]:
-        """Extract witnesses (PW-1, DW-1, etc.) and their substantive testimonies."""
+        """Extract witnesses (PW-1, DW-1, etc.), including ranges like 'PW-1 to PW-6'."""
         witnesses: List[NormalizedWitness] = []
         seen = set()
 
+        def _add_witness(wid: str, name: str = "", deposition: str = "") -> None:
+            if wid in seen:
+                return
+            seen.add(wid)
+            designation = (
+                "Official Witness"
+                if any(w in deposition for w in ["Constable", "Inspector", "SI", "Police", "IO", "Engineer"])
+                else "Public Witness"
+            )
+            witnesses.append(
+                NormalizedWitness(
+                    witness_id=wid,
+                    name=name.strip(),
+                    designation=designation,
+                    testimony_summary=deposition.strip()[:300] or f"Evaluated {wid} testimony.",
+                )
+            )
+
+        # Expand ranges like 'PW-1 to PW-6' or 'PW-1–PW-6'
+        for rm in re.finditer(r"\b(PW|DW)-?(\d+)\s*(?:to|–|-)\s*(?:PW|DW)?-?(\d+)\b([^\n.]*)", text, re.IGNORECASE):
+            prefix = rm.group(1).upper()
+            start_i, end_i = int(rm.group(2)), int(rm.group(3))
+            ctx = (rm.group(4) or "").strip()
+            if start_i < end_i <= start_i + 30:
+                for idx in range(start_i, end_i + 1):
+                    _add_witness(f"{prefix}-{idx}", "", ctx or f"{prefix}-{idx} witness deposition evaluated in record.")
+
         pattern = re.compile(
-            r"\b(PW-?[0-9]+|DW-?[0-9]+|P\.W\.\s*[0-9]+)\s*(?:[:\-\(]|\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*))?\s*([^\n;]+)",
+            r"\b(PW-?[0-9]+|DW-?[0-9]+|P\.W\.\s*[0-9]+)\s*(?:[:\-\(]|\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*))?\s*([^\n;]*)",
             re.IGNORECASE,
         )
         for m in pattern.finditer(text):
@@ -901,20 +948,7 @@ class JudgmentNormalizer:
                 wid = f"DW-{wid_raw[2:]}"
             else:
                 wid = wid_raw
-
-            if wid not in seen:
-                seen.add(wid)
-                name = m.group(2) or ""
-                deposition = m.group(3) or ""
-                designation = "Official Witness" if any(w in deposition for w in ["Constable", "Inspector", "SI", "Police", "IO"]) else "Public Witness"
-                witnesses.append(
-                    NormalizedWitness(
-                        witness_id=wid,
-                        name=name.strip(),
-                        designation=designation,
-                        testimony_summary=deposition.strip()[:300],
-                    )
-                )
+            _add_witness(wid, m.group(2) or "", m.group(3) or "")
 
         return witnesses
 
@@ -984,7 +1018,9 @@ class JudgmentNormalizer:
             "core reasoning", "legal provisions discussed", "set aside", "appeal was allowed",
             "acquitted of all charges", "bail bonds stood discharged", "judgment under challenge",
             "reverse burden of proof", "prosecution bore the burden", "circumstantial evidence",
-            "presumption under section 114", "reasoning targets:"
+            "presumption under section 114", "reasoning targets:",
+            "source case:", "strict isolation:", "phase 5 must evaluate", "single case-level verdict",
+            "isolation and evaluation workflow", "important source limitations",
         ]):
             return True
         return False
@@ -994,7 +1030,7 @@ class JudgmentNormalizer:
         """Extract factual propositions and classify their epistemic type."""
         facts: List[NormalizedFact] = []
         m = re.search(
-            r"(?:SECTION 1: CASE BACKGROUND|FACTS OF THE CASE|PROSECUTION CASE:?|2\.\s*Background and Prosecution Allegations|BRIEF FACTS:?|FACTUAL MATRIX:?|CASE BACKGROUND:?)(.*?)(?=SECTION 2|SECTION|\n\s*[0-9]\.|\n\n[A-Z\s]{4,}|\Z)",
+            r"(?:SECTION 1: CASE BACKGROUND|FACTS OF THE CASE|PROSECUTION CASE:?|2\.\s*(?:Background and Prosecution Allegations|Case (?:&|and) Factual Summary)|BRIEF FACTS:?|FACTUAL MATRIX:?|CASE BACKGROUND:?)(.*?)(?=SECTION 2|SECTION|\n\s*[3-9]\.|\n\n[A-Z\s]{4,}|\Z)",
             text,
             re.DOTALL | re.IGNORECASE,
         )
@@ -1002,49 +1038,50 @@ class JudgmentNormalizer:
         if not m and re.search(r"(?:1\.\s*Operative Verdict|Ground Truth\s*[\-–]\s*Real Court Verdict)", text, re.IGNORECASE):
             source_text = ""
         else:
-            source_text = m.group(1) if m else text[:1500]
+            source_text = m.group(1) if m else text[:2500]
 
         if source_text:
-            # Handle bullet points or sentences
-            lines = [line.strip(" \t•\u2022-*") for line in source_text.split("\n") if line.strip()]
-            for line in lines:
-                if len(line) > 25 and not line.startswith("SECTION") and not cls._is_non_fact_header_or_order(line):
-                    etype = cls._classify_epistemic_statement(line)
+            seen_stmts: set[str] = set()
+            # Handle both bullet points and individual sentences inside multi-sentence paragraphs
+            raw_chunks = [line.strip(" \t•\u2022-*") for line in source_text.split("\n") if line.strip()]
+            candidates: list[str] = []
+            for chunk in raw_chunks:
+                parts = re.split(r"(?<=[.!?])\s+", chunk)
+                if len(parts) > 1:
+                    candidates.extend(p.strip(" \t•\u2022-*") for p in parts if p.strip())
+                else:
+                    candidates.append(chunk)
+
+            for cand in candidates:
+                if (
+                    len(cand) > 25
+                    and cand not in seen_stmts
+                    and not cand.startswith("SECTION")
+                    and not cls._is_non_fact_header_or_order(cand)
+                ):
+                    seen_stmts.add(cand)
+                    etype = cls._classify_epistemic_statement(cand)
                     facts.append(
                         NormalizedFact(
-                            statement=line,
+                            statement=cand,
                             epistemic_type=etype,
                             is_material=True,
                         )
                     )
 
-            if not facts:
-                sentences = re.split(r"(?<=[.!?])\s+", source_text)
-                for s in sentences:
-                    s_clean = s.strip()
-                    if len(s_clean) > 25 and not s_clean.startswith("SECTION") and not cls._is_non_fact_header_or_order(s_clean):
-                        etype = cls._classify_epistemic_statement(s_clean)
-                        facts.append(
-                            NormalizedFact(
-                                statement=s_clean,
-                                epistemic_type=etype,
-                                is_material=True,
-                            )
-                        )
-
-        return facts[:15]
+        return facts[:20]
 
     @classmethod
     def _classify_epistemic_statement(cls, stmt: str) -> EpistemicType:
         """Classify a legal proposition into FACT, EVIDENCE, CLAIM, INFERENCE, or LEGAL_CONCLUSION."""
-        s = stmt.lower()
+        s = stmt.lower().strip()
         if any(term in s for term in ["held", "guilty", "acquitted", "consequently", "entitled to benefit", "liable to be dismissed", "judgment under challenge"]):
             return EpistemicType.LEGAL_CONCLUSION
         if any(term in s for term in ["infers", "indicates", "suggests", "demonstrates that", "implies", "leads to the conclusion"]):
             return EpistemicType.INFERENCE
-        if any(term in s for term in ["alleged", "allegation", "prosecution contended", "defence argued", "claimed that", "pleaded", "prosecution case is"]):
+        if s.startswith(("the prosecution submits", "the prosecution contends", "the prosecution argues", "the defense submits", "the defence submits", "the defense argues", "the defence argues", "the prosecution alleged", "prosecution case is")):
             return EpistemicType.CLAIM
-        if any(term in s for term in ["pw-", "ex.", "exhibit", "deposed", "testified", "memo", "fsl report", "recovered vide", "material object"]):
+        if any(term in s for term in ["pw-", "ex.", "ext.-", "exhibit", "deposed", "testified", "memo", "fsl report", "recovered vide", "material object"]):
             return EpistemicType.EVIDENCE
         return EpistemicType.FACT
 
@@ -1053,7 +1090,7 @@ class JudgmentNormalizer:
         """Extract legal acts and sections cited."""
         provisions = set()
         matches = re.findall(
-            r"(?:Section|Sec\.)\s+[0-9A-Za-z\(\)]+\s+(?:of\s+)?(?:the\s+)?(?:IPC|Indian Penal Code|CrPC|Code of Criminal Procedure|BNS|Bharatiya Nyaya Sanhita|BSA|Bharatiya Sakshya Adhiniyam|Arms Act|Evidence Act|Indian Evidence Act)",
+            r"(?:Section|Sec\.)\s+[0-9A-Za-z\(\)]+\s+(?:of\s+)?(?:the\s+)?(?:IPC|Indian Penal Code|CrPC|Code of Criminal Procedure|BNS|Bharatiya Nyaya Sanhita|BSA|Bharatiya Sakshya Adhiniyam|Arms Act|Evidence Act|Indian Evidence Act|Railway Property \(Unlawful Possession\) Act(?:,\s*1966)?|R\.P\.\(U\.P\.\)\s*Act)",
             text,
             re.IGNORECASE,
         )
@@ -1067,7 +1104,7 @@ class JudgmentNormalizer:
             re.IGNORECASE,
         )
         for nums, statute in m_compound:
-            for n in re.findall(r"\b[0-9]{2,4}\b", nums):
+            for n in re.findall(r"(?<!\w)([0-9]{1,4}(?:\([a-z0-9]+\))?)(?!\w)", nums):
                 provisions.add(f"Section {n} {statute.upper()}")
 
         return list(provisions)

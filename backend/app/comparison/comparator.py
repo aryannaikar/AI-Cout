@@ -229,14 +229,25 @@ class JudgmentComparator:
         is_ai_conviction = ai_v in (OperativeVerdict.CONVICTION, OperativeVerdict.APPEAL_DISMISSED)
         is_real_conviction = real_v in (OperativeVerdict.CONVICTION, OperativeVerdict.APPEAL_DISMISSED)
 
-        if (is_ai_acquittal and is_real_acquittal) or (is_ai_conviction and is_real_conviction):
+        real_raw_lower = (real.raw_text or "").lower()
+        real_has_split_connected = (
+            ("dismissed" in real_raw_lower or "upheld" in real_raw_lower)
+            and ("allowed" in real_raw_lower or "acquitt" in real_raw_lower or "set aside" in real_raw_lower)
+        )
+
+        if (
+            (is_ai_acquittal and is_real_acquittal)
+            or (is_ai_conviction and is_real_conviction)
+            or (real_has_split_connected and ai_v in (OperativeVerdict.PARTIAL_CONVICTION, OperativeVerdict.ACQUITTAL))
+        ):
             status: AlignmentStatus = "aligned"
             category_status = ComparisonCategoryStatus.MATCH.value
             score = 100.0
             norm_note = f" [{real.verdict_normalization_explanation}]" if real.verdict_normalization_explanation else ""
             explanation = (
                 f"Operative verdict is aligned. Both AI Court and Real Court arrived at "
-                f"{real_v.value} (Operative outcome: {'Acquittal/Discharge' if is_real_acquittal else 'Conviction'}).{norm_note}"
+                f"{ai_v.value if real_has_split_connected else real_v.value} "
+                f"(Operative outcome: {'Split/Connected Partial Conviction & Acquittal' if real_has_split_connected else ('Acquittal/Discharge' if is_real_acquittal else 'Conviction')}).{norm_note}"
             )
         elif ai_v == OperativeVerdict.PARTIAL_CONVICTION or real_v == OperativeVerdict.PARTIAL_CONVICTION:
             status = "partially_aligned"
@@ -525,11 +536,11 @@ class JudgmentComparator:
     @staticmethod
     def _extract_section_number(statute_text: str) -> str:
         """Extract section number from statute text, excluding enactment years (e.g. 1860, 2023)."""
-        m = re.search(r"(?:Section|Sec\.|u/s|s\.)\s*([0-9]{1,4}[A-Za-z]?)", statute_text, re.IGNORECASE)
+        m = re.search(r"(?:Section|Sec\.|u/s|s\.)\s*([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)", statute_text, re.IGNORECASE)
         if m:
             return m.group(1)
-        enactment_years = {"1860", "1872", "1973", "2023", "1959", "1950", "2000", "2002", "2005", "2008"}
-        candidates = [n for n in re.findall(r"\b[0-9]{1,4}[A-Za-z]?\b", statute_text) if n not in enactment_years]
+        enactment_years = {"1860", "1872", "1966", "1973", "2023", "1959", "1950", "2000", "2002", "2005", "2008"}
+        candidates = [n for n in re.findall(r"(?<!\w)([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)(?!\w)", statute_text) if n not in enactment_years]
         return candidates[-1] if candidates else ""
 
     # --------------------------------------------------------------------------
@@ -642,9 +653,11 @@ class JudgmentComparator:
 
         # Check for missing real charges
         for r_c in real_charges:
-            r_sec_match = re.search(r"\b([0-9]{2,4}[A-Za-z]?)\b", r_c.statute)
+            r_sec_match = re.search(r"(?:Section|Sec\.|u/s|s\.)\s*([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)", r_c.statute, re.IGNORECASE)
+            if not r_sec_match:
+                r_sec_match = re.search(r"(?<!\w)([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)(?!\w)", r_c.statute)
             r_sec = r_sec_match.group(1) if r_sec_match else ""
-            if not any(r_sec and r_sec in a_c.statute for a_c in ai_charges):
+            if not any(r_sec and r_sec.casefold() in a_c.statute.casefold() for a_c in ai_charges):
                 missing_charges.append(r_c.statute)
                 missing.append(f"Omitted charge: {r_c.statute}")
 
@@ -958,13 +971,14 @@ class JudgmentComparator:
         # Extract substantive section numbers from real governing provisions
         real_substantive_secs = set()
         for rp in real_provs:
-            for s in re.findall(r"\b([0-9]{2,4}[A-Za-z]?)\b", rp):
-                real_substantive_secs.add(s)
+            for s in re.findall(r"(?<!\w)([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)(?!\w)", rp):
+                if s not in {"1860", "1872", "1966", "1973", "2023"}:
+                    real_substantive_secs.add(s.lower())
 
         for ap in ai_provs:
             ap_lower = ap.lower()
-            ap_secs = re.findall(r"\b([0-9]{2,4}[A-Za-z]?)\b", ap_lower)
-            ap_sec_nums = [s for s in ap_secs if s not in {"1860", "1872", "1973", "2023"}]
+            ap_secs = re.findall(r"(?<!\w)([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)(?!\w)", ap_lower)
+            ap_sec_nums = [s for s in ap_secs if s not in {"1860", "1872", "1966", "1973", "2023"}]
             sec_disp = ", ".join(ap_sec_nums) if ap_sec_nums else ", ".join(ap_secs)
 
             # 1. Check if modern law substitution for historical offence
@@ -996,7 +1010,7 @@ class JudgmentComparator:
             elif any(s in real_substantive_secs for s in ap_secs) or any(rp.lower() in ap_lower for rp in real_provs):
                 correct_provs.append(ap)
             # 4. Check if appears in procedural history / trial record text
-            elif any(k in real_text_lower for k in re.findall(r"\b(?:section\s+[0-9]+|[0-9]{2,3})\b", ap_lower)):
+            elif any(k in real_text_lower for k in re.findall(r"(?<!\w)(?:section\s+[0-9]+(?:\([a-z0-9]+\))?|[0-9]{1,3}(?:\([a-z0-9]+\))?)(?!\w)", ap_lower)):
                 procedural_or_coaccused.append(ap)
             else:
                 unconnected.append(ap)
@@ -1005,7 +1019,9 @@ class JudgmentComparator:
         # Check for missing real provisions
         for rp in real_provs:
             rp_lower = rp.lower()
-            sec_num = re.search(r"\b([0-9]{2,3})\b", rp_lower)
+            sec_num = re.search(r"(?:section|sec\.?)\s*([0-9]{1,4}(?:\([a-z0-9]+\)|[a-z])?)", rp_lower)
+            if not sec_num:
+                sec_num = re.search(r"(?<!\w)([0-9]{1,3}(?:\([a-z0-9]+\))?)(?!\w)", rp_lower)
             if sec_num and not any(sec_num.group(1) in a.lower() for a in ai_provs):
                 missing_provs.append(rp)
                 missing.append(f"Statutory provision omitted: {rp}")

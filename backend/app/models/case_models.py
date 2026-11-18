@@ -225,13 +225,17 @@ class StructuredCase(BaseModel):
 
     def current_charges(self) -> list[Charge]:
         """Return only charges whose liability is presently before the court for decision."""
+        if len(self.connected_proceedings) > 1 or not self.decision_subject:
+            return [c for c in self.charges if c.record_status == "current"]
+        subj = self.decision_subject.strip().casefold()
         active = [
             c for c in self.charges
             if c.record_status == "current"
             and (
-                not self.decision_subject
-                or c.accused_name.casefold() == self.decision_subject.casefold()
-                or c.accused_name.casefold() in {"accused", "all accused", "petitioners"}
+                not c.accused_name.strip()
+                or subj in c.accused_name.casefold()
+                or c.accused_name.casefold() in subj
+                or c.accused_name.strip().casefold() in {"accused", "all accused", "petitioners", "appellant", "appellants"}
             )
         ]
         return active

@@ -110,7 +110,46 @@ class CaseUnderstandingAgent:
         if not res.missing_or_uncertain_info and fallback_data.get("missing_or_uncertain_info"):
             res.missing_or_uncertain_info = fallback_data["missing_or_uncertain_info"]
 
-        return res
+        return self._post_process_case(res, case_text)
+
+    @staticmethod
+    def _post_process_case(case: StructuredCase, case_text: str) -> StructuredCase:
+        """Refine charge status and connected-proceeding scope using explicit procedural cues."""
+        if len(case.connected_proceedings) > 1:
+            case.decision_subject = None
+
+        acquitted_secs: set[str] = set()
+        for m in re.finditer(
+            r"acquitted[^.\n]*?under\s+Sections?\s+([0-9A-Za-z,\s]+?)(?:\s+of\s+the\s+IPC|\s+IPC|\b)",
+            case_text,
+            re.IGNORECASE,
+        ):
+            acquitted_secs.update(s.casefold() for s in re.findall(r"\b\d+[A-Za-z]?\b", m.group(1)))
+
+        active_secs: set[str] = set()
+        for m in re.finditer(
+            r"(?:convicted|conviction|challenge|appeal)[^.\n]*?under\s+Sections?\s+([0-9A-Za-z()]+)",
+            case_text,
+            re.IGNORECASE,
+        ):
+            active_secs.update(s.casefold() for s in re.findall(r"\b\d+[A-Za-z]?\b", m.group(1)))
+
+        hist_only: set[str] = set()
+        if acquitted_secs and active_secs and (acquitted_secs - active_secs):
+            hist_only = acquitted_secs - active_secs
+            for ch in case.charges:
+                sec_nums = {s.casefold() for s in re.findall(r"\b\d+[A-Za-z]?\b", ch.section)}
+                if sec_nums & hist_only:
+                    ch.record_status = "procedural_history"
+                elif sec_nums & active_secs and ch.record_status != "other_accused":
+                    ch.record_status = "current"
+
+        if case.charges and not any(c.record_status == "current" for c in case.charges):
+            for ch in case.charges:
+                sec_nums = {s.casefold() for s in re.findall(r"\b\d+[A-Za-z]?\b", ch.section)}
+                if not (sec_nums & hist_only):
+                    ch.record_status = "current"
+        return case
 
     def _heuristic_parse(self, text: str, source_filename: str) -> dict:
         """Heuristic extractor providing robust fallback data for deterministic offline execution."""

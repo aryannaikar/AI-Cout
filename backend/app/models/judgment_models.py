@@ -5,8 +5,8 @@ Pydantic data models for Prosecution Arguments, Defense Arguments, and the 12-se
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Literal, Optional
+from pydantic import BaseModel, Field, model_validator
 
 
 class StatementType(str, Enum):
@@ -110,9 +110,9 @@ class JudicialIssueAnalysis(BaseModel):
 class IngredientItem(BaseModel):
     """Single statutory ingredient evaluated against evidence and rebuttals."""
 
-    ingredient_id: str
-    legal_description: str
-    source_citation: str
+    ingredient_id: str = ""
+    legal_description: str = ""
+    source_citation: str = ""
     supporting_evidence: list[str] = Field(default_factory=list)
     contradictory_evidence: list[str] = Field(default_factory=list)
     related_witnesses: list[str] = Field(default_factory=list)
@@ -121,6 +121,23 @@ class IngredientItem(BaseModel):
     defense_argument: str = ""
     assessment_status: Literal["Supported", "Disputed", "Not established", "Not assessable"] = "Not assessable"
     judge_reasoning: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        for k in ("ingredient_id", "legal_description", "source_citation", "prosecution_argument", "defense_argument", "judge_reasoning"):
+            if out.get(k) is None:
+                out[k] = ""
+        for k in ("supporting_evidence", "contradictory_evidence", "related_witnesses", "related_exhibits"):
+            if out.get(k) is None:
+                out[k] = []
+        valid_status = {"Supported", "Disputed", "Not established", "Not assessable"}
+        if out.get("assessment_status") not in valid_status:
+            out["assessment_status"] = "Not assessable"
+        return out
 
 
 class IngredientChecklist(BaseModel):
@@ -137,12 +154,30 @@ class IngredientChecklist(BaseModel):
 class ScrutinyChallenge(BaseModel):
     """Challenge raised by the independent Devil's Advocate scrutiny stage."""
 
-    challenge_id: str
-    category: str
+    challenge_id: str = ""
+    category: str = ""
     severity: Literal["low", "medium", "high"] = "medium"
-    description: str
+    description: str = ""
     affected_accused_or_charge: Optional[str] = None
     recommendation: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        for k in ("challenge_id", "category", "description", "recommendation"):
+            if out.get(k) is None:
+                out[k] = ""
+        sev = str(out.get("severity") or "").strip().lower()
+        if any(tok in sev for tok in ("high", "critical", "serious")):
+            out["severity"] = "high"
+        elif any(tok in sev for tok in ("low", "minor")):
+            out["severity"] = "low"
+        else:
+            out["severity"] = "medium"
+        return out
 
 
 class DevilsAdvocateReport(BaseModel):
