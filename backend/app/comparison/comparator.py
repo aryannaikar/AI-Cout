@@ -1318,7 +1318,13 @@ class JudgmentComparator:
         is_ai_custody = any(w in ai_order.lower() for w in ["convicted", "sentenced to", "rigorous imprisonment"]) and not is_ai_release
         is_real_custody = any(w in real_order.lower() for w in ["convicted", "sentenced to", "rigorous imprisonment", "appeal is dismissed"]) and not is_real_release
 
-        if (is_ai_release and is_real_release) or (is_ai_custody and is_real_custody):
+        real_raw_low = (real.raw_text or "").lower()
+        is_split_order = (
+            ("partial conviction" in ai_order.lower() or (is_ai_release and any(w in ai_order.lower() for w in ["conviction", "upheld", "convicted"])))
+            and (("dismissed" in real_order.lower() or "upheld" in real_order.lower() or "upheld" in real_raw_low) and (is_real_release or "acquitt" in real_raw_low or "set aside" in real_raw_low))
+        )
+
+        if (is_ai_release and is_real_release) or (is_ai_custody and is_real_custody) or is_split_order:
             status: AlignmentStatus = "aligned"
             category_status = ComparisonCategoryStatus.MATCH.value
             score = 100.0

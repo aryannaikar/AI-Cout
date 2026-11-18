@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 FOOTER_METADATA_PATTERNS = [
     r"AI Court of India\s*\|\s*Source:[^\n]*",
+    r"AI COURT OF INDIA\s*\|\s*Case benchmark:[^\n]*",
     r"CONFIDENTIAL EVALUATION FILE[^\n]*",
     r"CONFIDENTIAL[^\n]*DO NOT UPLOAD[^\n]*",
     r"Keep this file separate from the Case Packet[^\n]*",
@@ -116,9 +117,10 @@ class JudgmentNormalizer:
         """
         is_summary = bool(
             re.search(r"Ground Truth\s*[\u2013\-]", text, re.IGNORECASE)
-            or re.search(r"1\.\s*Operative Verdict", text, re.IGNORECASE)
+            or re.search(r"1\.\s*(?:Operative Verdict|Ground-truth identity)", text, re.IGNORECASE)
             or re.search(r"Comparison Engine Ground Truth", text, re.IGNORECASE)
             or re.search(r"STRICT ISOLATION:\s*This document contains", text, re.IGNORECASE)
+            or re.search(r"Case benchmark:", text, re.IGNORECASE)
         )
 
         # Strip Ground Truth isolation preamble before numbered sections
@@ -129,9 +131,9 @@ class JudgmentNormalizer:
             flags=re.DOTALL | re.IGNORECASE,
         )
 
-        # Separate Section 6/7/8 Evaluation Controls if present
+        # Separate Section 5/6/7/8 Evaluation Controls / Comparison Matrix if present
         eval_match = re.search(
-            r"(\n\s*(?:6\.\s*(?:Comparison Engine Ground Truth|Phase 5|Evaluation)|7\.\s*(?:Source and Evaluation Controls|Important source limitations)|8\.\s*Isolation and evaluation workflow).*)\Z",
+            r"(\n\s*(?:5\.\s*Ground-truth comparison matrix|6\.\s*(?:Comparison Engine Ground Truth|Phase 5|Evaluation)|7\.\s*(?:Source and Evaluation Controls|Important source limitations)|8\.\s*Isolation and evaluation workflow).*)\Z",
             cleaned,
             re.DOTALL | re.IGNORECASE,
         )
@@ -168,18 +170,29 @@ class JudgmentNormalizer:
                 )
             )
 
-        # If findings_per_charge was sparse but applicable_law has charges
-        if not charges and j.applicable_law:
+        # Also include penal charges referenced in applicable_law when not already represented by section number
+        has_railway_fpc = any("railway property" in k.lower() for k in j.findings_per_charge)
+        existing_charge_secs = set()
+        for ch in charges:
+            for m_sec in re.findall(r"(?<!\w)([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)(?!\w)", ch.statute):
+                if m_sec not in {"1860", "1872", "1966", "1973", "2023"}:
+                    existing_charge_secs.add(m_sec.lower())
+        if j.applicable_law:
             for law in j.applicable_law:
-                if any(k in law for k in ["Section", "Sec", "IPC", "BNS", "Arms Act"]):
-                    charges.append(
-                        NormalizedCharge(
-                            statute=law,
-                            era=cls._classify_statute_era(law),
-                            offence=law,
-                            finding=j.final_decision,
+                if has_railway_fpc and re.search(r"\b(?:379|411|102|114)\b", law):
+                    continue
+                if any(k in law for k in ["IPC", "Indian Penal Code", "BNS", "Bharatiya Nyaya", "Arms Act", "Railway Property"]) and not any(ev in law for ev in ["Evidence Act", "BSA", "Sakshya", "CrPC", "BNSS"]):
+                    law_secs = [s.lower() for s in re.findall(r"(?<!\w)([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)(?!\w)", law) if s not in {"1860", "1872", "1966", "1973", "2023"}]
+                    if law_secs and not any(s in existing_charge_secs for s in law_secs):
+                        charges.append(
+                            NormalizedCharge(
+                                statute=law,
+                                era=cls._classify_statute_era(law),
+                                offence=law,
+                                finding=j.final_decision,
+                            )
                         )
-                    )
+                        existing_charge_secs.update(law_secs)
 
         # Legal issues
         issues: List[NormalizedIssue] = []
@@ -218,6 +231,13 @@ class JudgmentNormalizer:
 
         # Legal provisions
         provisions = list(dict.fromkeys(j.applicable_law + j.legal_citations))
+        is_railway_case = any("railway property" in c.statute.lower() for c in charges) and not any(
+            re.search(r"\b(?:379|411)\b", c.statute) for c in charges
+        )
+        if is_railway_case:
+            provisions = [p for p in provisions if not re.search(r"\b(?:379|411|102|114)\b", p)]
+        if any(c.era == StatuteEra.HISTORICAL_IPC_CRPC for c in charges):
+            provisions = [p for p in provisions if not ("119" in p and ("bsa" in p.lower() or "evidence" in p.lower() or "sakshya" in p.lower()))]
 
         # Reasoning (combine reasons with per-issue analyses)
         reasons_text = j.reasons or ""
@@ -237,7 +257,7 @@ class JudgmentNormalizer:
         )
 
         parties = cls._extract_parties_from_title(j.case_title)
-        final_order = f"VERDICT: {j.final_decision}. {reasons_text[:300]}".strip()
+        final_order = f"VERDICT: {j.final_decision}. {reasons_text[:800]}".strip()
 
         return NormalizedJudgment(
             case_title=j.case_title,
@@ -628,6 +648,7 @@ class JudgmentNormalizer:
             "never add it to live courtstate",
             "confidential evaluation file",
             "source: supplied supreme court judgment",
+            "case benchmark:",
         ]):
             return True
         if re.search(r"^page\s+\d+", text_block.strip(), re.IGNORECASE):
@@ -890,6 +911,15 @@ class JudgmentNormalizer:
                     seen.add(clean)
                     issues.append(NormalizedIssue(issue_id=f"Issue-{idx}", statement=clean))
 
+        # 3b. Look for revision/proceeding headings when summary uses 'High Court's reasoning — Revision ...'
+        if not issues:
+            rev_headings = re.findall(r"(?:High Court(?:'s)? reasoning\s*[\u2014\-]\s*|^\s*•?\s*)(Revision\s+[0-9/]+[^\n]+(?:\n[^\n•\u2022]+)?)", text, re.IGNORECASE | re.MULTILINE)
+            for idx, r_stmt in enumerate(rev_headings[:6], start=1):
+                clean = " ".join(r_stmt.split()).strip()
+                if len(clean) > 15 and clean not in seen:
+                    seen.add(clean)
+                    issues.append(NormalizedIssue(issue_id=f"Issue-{idx}", statement=clean))
+
         # 4. Fallback: extract reasoning targets from evaluation block if available and issues empty
         if not issues and eval_block:
             m_targets = re.search(r"Reasoning targets:\s*([^\n]+(?:\n[^\n•\u2022\-\*0-9]+)*)", eval_block, re.IGNORECASE)
@@ -1034,8 +1064,8 @@ class JudgmentNormalizer:
             text,
             re.DOTALL | re.IGNORECASE,
         )
-        # If document is a structured summary with 1. Operative Verdict, 2. Issues, etc. and no facts section, do not grab headers
-        if not m and re.search(r"(?:1\.\s*Operative Verdict|Ground Truth\s*[\-–]\s*Real Court Verdict)", text, re.IGNORECASE):
+        # If document is a structured summary with 1. Operative Verdict / 1. Ground-truth identity, etc. and no facts section, do not grab headers
+        if not m and re.search(r"(?:1\.\s*(?:Operative Verdict|Ground-truth identity)|Ground Truth\s*[\-–]|Case benchmark:)", text, re.IGNORECASE):
             source_text = ""
         else:
             source_text = m.group(1) if m else text[:2500]
