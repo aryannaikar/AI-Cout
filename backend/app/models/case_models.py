@@ -208,6 +208,10 @@ class StructuredCase(BaseModel):
         default_factory=list,
         description="Top Stage-0 ML classifier predictions with decision scores.",
     )
+    ml_predicted_statutes: list[str] = Field(
+        default_factory=list,
+        description="Stage-0 ML statutory and companion-section predictions with confidence scores.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -229,6 +233,7 @@ class StructuredCase(BaseModel):
                 "undisputed_facts",
                 "missing_or_uncertain_info",
                 "ml_top_predictions",
+                "ml_predicted_statutes",
             ),
         )
 

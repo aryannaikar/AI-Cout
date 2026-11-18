@@ -67,6 +67,16 @@ class EvidenceIntelligenceBuilder:
         recovery_analyses = cls._build_recovery_analyses(case, package, exhibits, witnesses)
         medical_forensic = cls._build_medical_forensic(case, package, witnesses)
 
+        ml_defects: list[str] = []
+        theft_audit: list[str] = []
+        try:
+            from app.services.ml_defect_classifier import MLEvidentiaryDefectClassifier
+
+            ml_defects = MLEvidentiaryDefectClassifier.detect_for_case(case=case, package=package)
+            theft_audit = MLEvidentiaryDefectClassifier.evaluate_theft_recovery_chain(case=case, package=package)
+        except Exception:
+            pass
+
         return {
             "canonical_witnesses": witnesses,
             "canonical_exhibits": exhibits,
@@ -75,6 +85,8 @@ class EvidenceIntelligenceBuilder:
             "contradiction_matrix": contradiction_matrix,
             "recovery_analyses": recovery_analyses,
             "medical_forensic_comparison": medical_forensic,
+            "ml_detected_defects": ml_defects,
+            "theft_recovery_chain_audit": theft_audit,
         }
 
     @classmethod

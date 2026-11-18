@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, FileText, CheckCircle2, AlertTriangle, Play, Scale } from 'lucide-react';
+import { UploadCloud, CheckCircle2, AlertTriangle, Play, Gavel } from 'lucide-react';
 import type { UploadedCaseInfo } from '../types/court';
 
 interface CaseUploadProps {
@@ -110,20 +110,26 @@ export const CaseUpload: React.FC<CaseUploadProps> = ({
           
           {/* Top Courtroom Brand */}
           <div
+            className="emblem-breathe"
             style={{
-              width: '64px',
-              height: '64px',
+              width: '68px',
+              height: '68px',
               borderRadius: '50%',
               background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.25) 0%, rgba(184, 134, 11, 0.1) 100%)',
               border: '1.5px solid var(--gold-primary)',
               display: 'inline-flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
+              gap: '3px',
               boxShadow: '0 0 24px rgba(212, 175, 55, 0.25)',
               marginBottom: '16px',
             }}
           >
-            <Scale size={32} color="var(--gold-primary)" />
+            <span className="gavel-hammer-loop">
+              <Gavel size={28} color="var(--gold-primary)" />
+            </span>
+            <div className="gavel-block-ripple" />
           </div>
 
           <h2
@@ -139,16 +145,59 @@ export const CaseUpload: React.FC<CaseUploadProps> = ({
             AI COURT OF INDIA
           </h2>
           
-          <p style={{ color: '#94A3B8', fontSize: '0.94rem', margin: '0 0 36px 0', letterSpacing: '0.02em' }}>
-            AI Legal Reasoning & Courtroom Simulation
+          <p style={{ color: '#94A3B8', fontSize: '0.95rem', margin: '0 0 18px 0', letterSpacing: '0.02em' }}>
+            AI Legal Reasoning &amp; Autonomous Courtroom Simulation
           </p>
+
+          {/* Capability Badges */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              flexWrap: 'wrap',
+              gap: '8px',
+              marginBottom: '28px',
+            }}
+          >
+            {[
+              'BNS • BNSS • BSA Corpus',
+              'Hybrid Legal RAG & Precedents',
+              '12-Section Judicial Decree',
+            ].map((badge) => (
+              <span
+                key={badge}
+                style={{
+                  fontSize: '0.75rem',
+                  color: '#CBD5E1',
+                  background: 'rgba(15, 23, 42, 0.72)',
+                  border: '1px solid rgba(212, 175, 55, 0.22)',
+                  padding: '4px 12px',
+                  borderRadius: '999px',
+                  letterSpacing: '0.02em',
+                }}
+              >
+                {badge}
+              </span>
+            ))}
+          </div>
 
           {/* Large Premium Case Packet Upload Area */}
           <div
+            role="button"
+            tabIndex={disabled || isStreaming ? -1 : 0}
+            aria-label="Upload unadjudicated case packet PDF"
+            onKeyDown={(e) => {
+              if ((e.key === 'Enter' || e.key === ' ') && !disabled && !isStreaming) {
+                e.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => {
+              if (!disabled && !isStreaming) fileInputRef.current?.click();
+            }}
             style={{
               border: isDragging ? '2px dashed var(--gold-primary)' : '1.5px dashed rgba(212, 175, 55, 0.35)',
               borderRadius: '16px',
@@ -199,6 +248,12 @@ export const CaseUpload: React.FC<CaseUploadProps> = ({
               {isUploading ? 'Validating Case Record...' : 'UPLOAD CASE PACKET'}
             </h3>
 
+            {isUploading && (
+              <div className="upload-scanning-track" aria-label="Validating PDF">
+                <div className="upload-scanning-bar" />
+              </div>
+            )}
+
             <p style={{ color: '#94A3B8', fontSize: '0.88rem', maxWidth: '420px', margin: '0 auto 16px auto', lineHeight: 1.5 }}>
               Upload the case materials to begin the courtroom simulation.
             </p>
@@ -223,9 +278,10 @@ export const CaseUpload: React.FC<CaseUploadProps> = ({
       ) : (
         /* Post-Upload Staged Bar */
         <div
+          className="animate-verdict-card"
           style={{
-            background: 'rgba(15, 23, 42, 0.75)',
-            border: '1.5px solid rgba(212, 175, 55, 0.35)',
+            background: 'rgba(15, 23, 42, 0.78)',
+            border: '1.5px solid rgba(212, 175, 55, 0.42)',
             borderRadius: '12px',
             padding: '16px 20px',
             display: 'flex',
@@ -234,21 +290,32 @@ export const CaseUpload: React.FC<CaseUploadProps> = ({
             flexWrap: 'wrap',
             gap: '14px',
             backdropFilter: 'blur(12px)',
+            boxShadow: '0 8px 28px rgba(0, 0, 0, 0.35), 0 0 20px rgba(212, 175, 55, 0.12)',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <div
+              className="animate-gavel-ring"
               style={{
                 padding: '10px',
-                borderRadius: '8px',
-                background: 'rgba(16, 185, 129, 0.15)',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
+                borderRadius: '10px',
+                background: 'rgba(212, 175, 55, 0.15)',
+                border: '1px solid rgba(212, 175, 55, 0.4)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '3px',
               }}
+              title="Case admitted — Bench ready"
             >
-              <FileText size={24} color="#10B981" />
+              <span className="gavel-hammer-once">
+                <Gavel size={22} color="var(--gold-primary)" />
+              </span>
+              <div className="gavel-block-ripple" style={{ width: '20px' }} />
             </div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '0.98rem', fontWeight: 600, color: '#F1F5F9' }}>
                   {uploadedCase.filename}
                 </span>
@@ -269,7 +336,8 @@ export const CaseUpload: React.FC<CaseUploadProps> = ({
                 </span>
               </div>
               <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: '#94A3B8' }}>
-                {uploadedCase.page_count} Pages &bull; {(uploadedCase.file_size / 1024).toFixed(1)} KB
+                {uploadedCase.page_count} Pages &bull; {(uploadedCase.file_size / 1024).toFixed(1)} KB &bull;{' '}
+                <span style={{ color: 'var(--gold-primary)' }}>Bench Ready to Convene</span>
               </p>
             </div>
           </div>
@@ -286,7 +354,11 @@ export const CaseUpload: React.FC<CaseUploadProps> = ({
               gap: '8px',
             }}
           >
-            <Play size={16} fill="#070B14" />
+            {isStreaming ? (
+              <Gavel size={16} className="gavel-hammer-loop" />
+            ) : (
+              <Play size={16} fill="#070B14" />
+            )}
             <span>{isStreaming ? 'Court In Session...' : 'START AI COURT'}</span>
           </button>
         </div>

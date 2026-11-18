@@ -218,3 +218,494 @@ h1, h2, h3, .font-serif {
     padding-top: 20px;
   }
 }
+
+/* Accessibility: Keyboard focus ring */
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--gold-primary);
+  outline-offset: 2px;
+}
+
+/* Active speaker podium glow */
+@keyframes activeSpeakerGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.65), 0 10px 30px rgba(212, 175, 55, 0.18);
+  }
+}
+
+.active-speaker-card {
+  animation: activeSpeakerGlow 2.4s ease-in-out infinite;
+}
+
+/* Statutory citation inline chip */
+.statute-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  margin: 0 2px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  font-weight: 500;
+  color: #FDE68A;
+  background: rgba(212, 175, 55, 0.13);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  vertical-align: baseline;
+  line-height: 1.45;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.statute-chip:hover {
+  transform: translateY(-1px);
+  background: rgba(212, 175, 55, 0.22);
+  border-color: rgba(212, 175, 55, 0.65);
+}
+
+/* Sticky research chamber on desktop */
+.research-chamber-sticky {
+  position: sticky;
+  top: 84px;
+  max-height: calc(100vh - 108px);
+}
+
+@media (max-width: 1100px) {
+  .research-chamber-sticky {
+    position: static;
+    max-height: 620px;
+  }
+}
+
+/* Floating jump-to-latest button */
+.jump-latest-btn {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid var(--gold-primary);
+  color: var(--gold-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6), 0 0 16px rgba(212, 175, 55, 0.25);
+  backdrop-filter: blur(10px);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.jump-latest-btn:hover {
+  transform: translateX(-50%) translateY(-2px);
+  background: rgba(30, 41, 59, 0.98);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7), 0 0 22px rgba(212, 175, 55, 0.4);
+}
+
+/* Directional Courtroom Bubble Entrances */
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-16px) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(16px) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+@keyframes benchSettle {
+  from {
+    opacity: 0;
+    transform: scale(0.982) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes verdictReveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes gavelRing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 18px rgba(212, 175, 55, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(212, 175, 55, 0);
+  }
+}
+
+@keyframes scanSweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.animate-slide-left {
+  animation: slideInLeft 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-right {
+  animation: slideInRight 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-bench-settle {
+  animation: benchSettle 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-popover {
+  animation: popoverIn 0.16s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-verdict-card {
+  animation: verdictReveal 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-gavel-ring {
+  animation: gavelRing 1.8s ease-out 2;
+}
+
+.upload-scanning-track {
+  width: 220px;
+  height: 3px;
+  margin: 0 auto 14px auto;
+  border-radius: 999px;
+  background: rgba(212, 175, 55, 0.16);
+  overflow: hidden;
+  position: relative;
+}
+
+.upload-scanning-bar {
+  width: 45%;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--gold-primary), transparent);
+  animation: scanSweep 1.15s ease-in-out infinite;
+}
+
+/* Progressive testimony paragraph stagger */
+@keyframes paragraphStagger {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.para-stagger {
+  opacity: 0;
+  animation: paragraphStagger 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Animated Hearing Stepper connector beam */
+@keyframes stepperFlow {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.stepper-connector-active {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.3), rgba(212, 175, 55, 0.9), rgba(16, 185, 129, 0.3)) !important;
+  background-size: 200% 100%;
+  animation: stepperFlow 2.2s linear infinite;
+}
+
+/* Modal backdrop & decree unfold */
+@keyframes modalBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalUnfold {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-backdrop-animate {
+  animation: modalBackdropIn 0.2s ease-out forwards;
+}
+
+.modal-unfold-animate {
+  animation: modalUnfold 0.26s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Breathing ambient glow on Scales emblem */
+@keyframes emblemBreathe {
+  0%, 100% {
+    box-shadow: 0 0 22px rgba(212, 175, 55, 0.22);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 36px rgba(212, 175, 55, 0.45);
+    transform: scale(1.03);
+  }
+}
+
+.emblem-breathe {
+  animation: emblemBreathe 3.8s ease-in-out infinite;
+}
+
+/* Judge Hammer (Gavel) Strike Animation */
+@keyframes gavelStrikeLoop {
+  0% {
+    transform: rotate(-32deg) translateY(-2px);
+  }
+  25% {
+    transform: rotate(-38deg) translateY(-3px);
+  }
+  42% {
+    transform: rotate(15deg) translateY(2px);
+  }
+  54% {
+    transform: rotate(-8deg) translateY(0);
+  }
+  66% {
+    transform: rotate(4deg) translateY(0);
+  }
+  78%, 100% {
+    transform: rotate(0deg) translateY(0);
+  }
+}
+
+@keyframes gavelStrikeOnce {
+  0% {
+    transform: rotate(-40deg) translateY(-3px) scale(1.1);
+  }
+  40% {
+    transform: rotate(16deg) translateY(2px) scale(1);
+  }
+  62% {
+    transform: rotate(-8deg);
+  }
+  80% {
+    transform: rotate(3deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes gavelBaseRipple {
+  0%, 38% {
+    opacity: 0;
+    transform: scaleX(0.3);
+  }
+  44% {
+    opacity: 1;
+    transform: scaleX(1.2);
+  }
+  75%, 100% {
+    opacity: 0;
+    transform: scaleX(1.55);
+  }
+}
+
+.gavel-hammer-loop {
+  display: inline-flex;
+  transform-origin: 78% 78%;
+  animation: gavelStrikeLoop 2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.gavel-hammer-once {
+  display: inline-flex;
+  transform-origin: 78% 78%;
+  animation: gavelStrikeOnce 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.gavel-block-ripple {
+  width: 28px;
+  height: 2.5px;
+  border-radius: 999px;
+  background: var(--gold-primary);
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.8);
+  animation: gavelBaseRipple 2s ease-out infinite;
+}
+
+/* Full-screen "ORDER!" Big Gavel Strike Overlay */
+@keyframes bigGavelSwing {
+  0% {
+    transform: rotate(35deg) translateY(-20px);
+  }
+  15% {
+    transform: rotate(45deg) translateY(-30px);
+  }
+  28% {
+    transform: rotate(-30deg) translateY(45px);
+  }
+  38% {
+    transform: rotate(15deg) translateY(5px);
+  }
+  50% {
+    transform: rotate(-30deg) translateY(45px);
+  }
+  64% {
+    transform: rotate(-10deg) translateY(20px);
+  }
+  80%, 100% {
+    transform: rotate(-18deg) translateY(28px);
+  }
+}
+
+@keyframes soundBlockJolt {
+  0%, 26%, 36%, 48%, 58%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  29%, 51% {
+    transform: translateY(6px) scale(1.06, 0.92);
+  }
+}
+
+@keyframes gavelShockwave {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.8);
+  }
+}
+
+@keyframes orderTitlePop {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(12px);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.06) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.gavel-overlay-backdrop {
+  animation: modalBackdropIn 0.18s ease-out forwards;
+}
+
+.big-gavel-swing {
+  transform-origin: top right !important;
+  animation: bigGavelSwing 1.6s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
+  will-change: transform;
+}
+
+.gavel-sound-block {
+  animation: soundBlockJolt 1.6s ease-out forwards !important;
+  will-change: transform;
+}
+
+.gavel-shockwave {
+  position: absolute;
+  left: 50%;
+  top: 72%;
+  width: 140px;
+  height: 40px;
+  margin-left: -70px;
+  margin-top: -20px;
+  border-radius: 50%;
+  border: 3px solid rgba(212, 175, 55, 0.95);
+  box-shadow: 0 0 24px rgba(212, 175, 55, 0.7);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.gavel-shockwave-1 {
+  animation: gavelShockwave 0.7s ease-out 0.42s forwards !important;
+}
+
+.gavel-shockwave-2 {
+  animation: gavelShockwave 0.8s ease-out 0.78s forwards !important;
+}
+
+.gavel-order-title {
+  animation: orderTitlePop 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.38s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-slide-left,
+  .animate-slide-right,
+  .animate-bench-settle,
+  .animate-popover,
+  .animate-verdict-card,
+  .animate-gavel-ring,
+  .pulse-gold,
+  .active-speaker-card,
+  .upload-scanning-bar,
+  .para-stagger,
+  .stepper-connector-active,
+  .modal-backdrop-animate,
+  .modal-unfold-animate,
+  .emblem-breathe {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+  }
+}

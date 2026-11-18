@@ -187,6 +187,12 @@ class DefenseAgent:
             reasonable_doubt_grounds.append(
                 f"Electronic records relied upon by prosecution lack mandatory certification under {elec_sec}."
             )
+        if evidence_report and getattr(evidence_report, "ml_detected_defects", None):
+            existing_cf = {g.casefold() for g in reasonable_doubt_grounds}
+            for defect in list(evidence_report.ml_detected_defects)[:3]:
+                if defect and defect.casefold() not in existing_cf:
+                    reasonable_doubt_grounds.append(defect)
+                    existing_cf.add(defect.casefold())
 
         # Missing evidence highlighted
         missing_evidence = evidence_report.missing_evidence_gaps.copy() if evidence_report else []

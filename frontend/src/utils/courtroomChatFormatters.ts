@@ -17,6 +17,29 @@ export interface FormattedChatMessage {
   isJudge?: boolean;
 }
 
+const PLACEHOLDER_PRECEDENT_URLS = new Set([
+  'https://judgments.ecourts.gov.in/pdf/legal_precedent.pdf',
+  'https://judgments.ecourts.gov.in/pdf/possession_precedent.pdf',
+]);
+
+/**
+ * Replaces synthetic fallback URLs (which 404 on eCourts) with a live Indian Kanoon
+ * search link for the precedent title so users always land on real case law.
+ */
+export function resolvePrecedentUrl(url?: string, title?: string): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  if (PLACEHOLDER_PRECEDENT_URLS.has(trimmed) || trimmed.endsWith('/legal_precedent.pdf')) {
+    const cleanQuery = (title || 'Supreme Court of India precedent')
+      .replace(/^Legal Interpretation of\s+/i, '')
+      .replace(/\s*-\s*High Court Precedents$/i, '')
+      .trim();
+    return `https://indiankanoon.org/search/?formInput=${encodeURIComponent(cleanQuery)}`;
+  }
+  return trimmed;
+}
+
 export function formatCaseUnderstanding(payload: any): FormattedChatMessage[] {
   const caseTitle = payload.case_title || (payload.summary ? payload.summary.split('.')[0] : 'State v. Accused');
   const charges = Array.isArray(payload.charges) ? payload.charges : [];
@@ -24,12 +47,17 @@ export function formatCaseUnderstanding(payload: any): FormattedChatMessage[] {
   const exhibits = Array.isArray(payload.exhibits) ? payload.exhibits : [];
   const summary = payload.summary || payload.allegations_summary || 'Case docket registered for adjudication.';
   const facts = payload.facts ? (Array.isArray(payload.facts) ? payload.facts.join(' ') : payload.facts) : '';
+  const mlCaseType = typeof payload.ml_case_type === 'string' ? payload.ml_case_type : '';
+  const mlPredictedStatutes: string[] = Array.isArray(payload.ml_predicted_statutes) ? payload.ml_predicted_statutes : [];
 
   const chips = [
     { label: 'Charges', value: charges.length || 1, color: '#F87171' },
     { label: 'Witnesses', value: witnesses.length || 2, color: '#A78BFA' },
     { label: 'Exhibits', value: exhibits.length || 3, color: '#34D399' },
   ];
+  if (mlPredictedStatutes.length > 0) {
+    chips.push({ label: 'ML Statutes', value: mlPredictedStatutes.length, color: '#38BDF8' });
+  }
 
   const msgs: FormattedChatMessage[] = [];
   
@@ -40,6 +68,14 @@ export function formatCaseUnderstanding(payload: any): FormattedChatMessage[] {
     introText: `The case materials have been reviewed for ${caseTitle}.`,
     bodyParagraphs: [summary],
     chips,
+    metadataBadge: mlCaseType ? `ML Docket: ${mlCaseType.split(' ')[0]}` : undefined,
+    substantiveItems: mlPredictedStatutes.length > 0
+      ? [{
+          label: 'Stage-0 ML Statutory & Companion Predictions',
+          text: mlPredictedStatutes.join(' • '),
+          tag: 'ML Predictor',
+        }]
+      : undefined,
   });
 
   if (facts) {
@@ -145,7 +181,7 @@ export function formatProsecutorWebResearch(payload: any): FormattedChatMessage[
     label: s.title || 'Judicial Precedent',
     text: s.summary || s.relevance || 'Affirms statutory interpretation relied upon by prosecution.',
     tag: 'Precedent',
-    link: s.url || undefined,
+    link: resolvePrecedentUrl(s.url, s.title),
   }));
 
   return [{
@@ -276,7 +312,7 @@ export function formatDefenseWebResearch(payload: any): FormattedChatMessage[] {
     label: s.title || 'Defense Authority',
     text: s.summary || s.relevance || 'Precedent affirming acquittal standards in evidentiary ambiguity.',
     tag: 'Precedent',
-    link: s.url || undefined,
+    link: resolvePrecedentUrl(s.url, s.title),
   }));
 
   return [{
@@ -300,6 +336,15 @@ export function formatEvidence(payload: any): FormattedChatMessage[] {
     text: item.description || '',
     tag: item.chain_of_custody_intact ? 'Custody Intact' : 'Custody Disputed',
   }));
+
+  const mlDefects: string[] = Array.isArray(payload.ml_detected_defects) ? payload.ml_detected_defects : [];
+  mlDefects.slice(0, 2).forEach((defect: string) => {
+    substantiveItems.push({
+      label: 'Evidentiary Red Flag',
+      text: defect,
+      tag: 'ML Defect Classifier',
+    });
+  });
 
   return [{
     speakerName: 'Evidence Analysis Agent',

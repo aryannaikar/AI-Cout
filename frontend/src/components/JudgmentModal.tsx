@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   X, 
   Scale, 
@@ -27,6 +27,16 @@ export const JudgmentModal: React.FC<JudgmentModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'issues' | 'citations'>('overview');
   const [isComparisonOpen, setIsComparisonOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isComparisonOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, isComparisonOpen]);
 
   const handleCopy = () => {
     const fullText = `
@@ -77,22 +87,31 @@ PRONOUNCED IN OPEN COURT.
   const isConviction = judgment.final_decision?.toUpperCase().includes('CONVICTION');
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(5, 8, 15, 0.85)',
-      backdropFilter: 'blur(10px)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 9999,
-      padding: '24px',
-    }}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Final AI Judgment"
+      className="modal-backdrop-animate"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(5, 8, 15, 0.85)',
+        backdropFilter: 'blur(10px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 9999,
+        padding: '24px',
+      }}
+    >
       <div
-        className="glass-panel-court animate-fade-in"
+        className="glass-panel-court modal-unfold-animate"
         style={{
           width: '100%',
           maxWidth: '960px',

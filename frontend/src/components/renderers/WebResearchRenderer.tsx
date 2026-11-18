@@ -1,5 +1,6 @@
 import React from 'react';
 import { Globe, ExternalLink, BookMarked, Lightbulb } from 'lucide-react';
+import { resolvePrecedentUrl } from '../../utils/courtroomChatFormatters';
 
 interface WebResearchRendererProps {
   payload: any;
@@ -107,7 +108,7 @@ export const WebResearchRenderer: React.FC<WebResearchRendererProps> = ({ payloa
                   </span>
                   {src.url && (
                     <a
-                      href={src.url}
+                      href={resolvePrecedentUrl(src.url, src.title)}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{

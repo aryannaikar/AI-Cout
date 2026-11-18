@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import type { 
   AgentMessage, 
@@ -11,6 +11,7 @@ import { CourtroomChat } from './components/CourtroomChat';
 import { ResearchChamber } from './components/ResearchChamber';
 import { JudgmentModal } from './components/JudgmentModal';
 import { ComparisonModal } from './components/ComparisonModal';
+import { GavelOrderOverlay } from './components/GavelOrderOverlay';
 
 const readPersistedJudgment = async (caseId: string): Promise<Judgment | null> => {
   const response = await fetch(`/api/court/cases/${encodeURIComponent(caseId)}/judgment`);
@@ -29,6 +30,12 @@ export function App() {
   const [isJudgmentModalOpen, setIsJudgmentModalOpen] = useState<boolean>(false);
   const [isComparisonModalOpen, setIsComparisonModalOpen] = useState<boolean>(false);
   const [courtError, setCourtError] = useState<string | null>(null);
+  const [gavelOverlay, setGavelOverlay] = useState<'start' | 'end' | null>(null);
+  const endGavelShownRef = useRef<boolean>(false);
+
+  const dismissGavelOverlay = useCallback(() => {
+    setGavelOverlay(null);
+  }, []);
 
   // Reset state for new case
   const handleResetSession = () => {
@@ -42,11 +49,15 @@ export function App() {
     setIsJudgmentModalOpen(false);
     setIsComparisonModalOpen(false);
     setCourtError(null);
+    setGavelOverlay(null);
+    endGavelShownRef.current = false;
   };
 
   const handleStartCourt = async () => {
     if (!uploadedCase || isStreaming) return;
 
+    endGavelShownRef.current = false;
+    setGavelOverlay('start');
     setIsStreaming(true);
     setCourtError(null);
     setMessages([]);
@@ -130,6 +141,10 @@ export function App() {
       // delayed or its stream closes after the final agent message.
       if (data.agent === 'judge' && data.payload?.judgment) {
         setJudgment(data.payload.judgment as Judgment);
+        if (!endGavelShownRef.current) {
+          endGavelShownRef.current = true;
+          setGavelOverlay('end');
+        }
       }
       const newMsg: AgentMessage = {
         id: `${data.agent}_${Date.now()}`,
@@ -150,6 +165,10 @@ export function App() {
     } else if (type === 'court_completed') {
       if (data.judgment) {
         setJudgment(data.judgment);
+        if (!endGavelShownRef.current) {
+          endGavelShownRef.current = true;
+          setGavelOverlay('end');
+        }
       } else {
         const judgeFailure = data.report?.errors?.find((item: any) => item.agent === 'judge');
         if (judgeFailure?.error) {
@@ -318,6 +337,14 @@ export function App() {
           onClose={() => setIsComparisonModalOpen(false)}
         />
       )}
+
+      {/* Full-Screen Judge Gavel ("ORDER!") Overlay */}
+      <GavelOrderOverlay
+        visible={gavelOverlay !== null}
+        mode={gavelOverlay === 'end' ? 'end' : 'start'}
+        verdict={judgment?.final_decision}
+        onDone={dismissGavelOverlay}
+      />
 
       {/* Dignified Courtroom Footer */}
       <footer

@@ -230,3 +230,11 @@ class EvidenceAnalysisReport(BaseModel):
     contradiction_matrix: Optional[ContradictionMatrix] = Field(default=None)
     recovery_analyses: list[RecoveryChainAnalysis] = Field(default_factory=list)
     medical_forensic_comparison: MedicalForensicComparison = Field(default_factory=MedicalForensicComparison)
+    ml_detected_defects: list[str] = Field(
+        default_factory=list,
+        description="Stage-1 ML-detected evidentiary and procedural defects grounded in the case record.",
+    )
+    theft_recovery_chain_audit: list[str] = Field(
+        default_factory=list,
+        description="5-Link judicial audit for theft, stolen property, and recovery-based offences.",
+    )

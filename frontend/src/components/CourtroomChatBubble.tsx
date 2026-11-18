@@ -16,7 +16,7 @@ import {
   FileText
 } from 'lucide-react';
 import type { AgentMessage, ResearchProvisionRef, SideResearchContext } from '../types/court';
-import { getFormattedMessage } from '../utils/courtroomChatFormatters';
+import { getFormattedMessage, resolvePrecedentUrl } from '../utils/courtroomChatFormatters';
 import type { FormattedChatMessage } from '../utils/courtroomChatFormatters';
 
 interface CourtroomChatBubbleProps {
@@ -115,6 +115,24 @@ function extractMentionedSections(text: string): string[] {
   return Array.from(matches);
 }
 
+const STATUTE_CHIP_REGEX = /(\b(?:Section|Article|§)\s+\d+[A-Za-z]?(?:\(\d+\))?(?:\([a-zA-Z]+\))?(?:\s+(?:of\s+(?:the\s+)?)?(?:BNS|BNSS|BSA|IPC|CrPC|IEA|Constitution))?|\b(?:BNS|BNSS|BSA)\s+\d+[A-Za-z]?(?:\(\d+\))?)/g;
+
+function renderTextWithStatuteChips(text: string): React.ReactNode {
+  if (!text) return text;
+  const parts = text.split(STATUTE_CHIP_REGEX);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      return (
+        <span key={i} className="statute-chip">
+          {part}
+        </span>
+      );
+    }
+    return <React.Fragment key={i}>{part}</React.Fragment>;
+  });
+}
+
 const SingleBubble: React.FC<SingleBubbleProps> = ({
   formatted,
   agent,
@@ -127,6 +145,7 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
   const [showRawData, setShowRawData] = useState(false);
   const [copiedRaw, setCopiedRaw] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
 
   const isLawyerBubble =
     agent === 'prosecutor' ||
@@ -168,7 +187,7 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
   // Alignments: Prosecutor slightly right, Defense slightly left, Neutral/Judge centered
   let alignSelf = 'flex-start';
   let maxWidth = isResearch ? '100%' : '82%';
-  let minWidth = isResearch ? '100%' : '320px';
+  let minWidth = isResearch ? '100%' : 'min(320px, 100%)';
   let bg = 'rgba(19, 24, 36, 0.75)';
   let borderColor = 'rgba(255, 255, 255, 0.08)';
   let roleBadgeBg = 'rgba(255, 255, 255, 0.08)';
@@ -237,8 +256,16 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
     setTimeout(() => setCopiedRaw(false), 2000);
   };
 
+  const showPopover = hasResearchHover && (isHovered || isPinned) && Boolean(sideResearch);
+  const entranceClass = isPros
+    ? 'animate-slide-right'
+    : isDef
+      ? 'animate-slide-left'
+      : 'animate-bench-settle';
+
   return (
     <div
+      className={entranceClass}
       onMouseEnter={() => { if (hasResearchHover) setIsHovered(true); }}
       onMouseLeave={() => { if (hasResearchHover) setIsHovered(false); }}
       style={{
@@ -249,14 +276,14 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
         display: 'flex',
         flexDirection: 'column',
         gap: '6px',
-        animation: 'fadeIn 0.25s ease-out forwards',
         position: 'relative',
-        zIndex: isHovered ? 40 : 1,
+        zIndex: showPopover ? 40 : 1,
       }}
     >
-      {/* Floating Research & Source PDF Popover on Hover */}
-      {hasResearchHover && isHovered && sideResearch && (
+      {/* Floating Research & Source PDF Popover on Hover or Click-Pin */}
+      {showPopover && sideResearch && (
         <div
+          className="animate-popover"
           style={{
             position: 'absolute',
             bottom: 'calc(100% + 6px)',
@@ -355,7 +382,7 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
                   </span>
                   {ws.url && (
                     <a
-                      href={ws.url}
+                      href={resolvePrecedentUrl(ws.url, ws.title)}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{ color: 'var(--gold-primary)', display: 'inline-flex', alignItems: 'center', gap: '2px', textDecoration: 'none', flexShrink: 0 }}
@@ -433,24 +460,38 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {hasResearchHover && (
-              <span
+              <button
+                type="button"
+                onClick={() => setIsPinned((prev) => !prev)}
+                title={isPinned ? 'Unpin sources popover' : 'Click to pin sources popover'}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '4px',
                   fontSize: '0.66rem',
                   fontWeight: 600,
-                  color: isPros ? '#93C5FD' : '#6EE7B7',
-                  background: isPros ? 'rgba(59, 130, 246, 0.14)' : 'rgba(16, 185, 129, 0.14)',
-                  border: `1px solid ${isPros ? 'rgba(96, 165, 250, 0.35)' : 'rgba(52, 211, 153, 0.35)'}`,
-                  padding: '1px 6px',
+                  color: isPinned ? '#FDE68A' : isPros ? '#93C5FD' : '#6EE7B7',
+                  background: isPinned
+                    ? 'rgba(212, 175, 55, 0.2)'
+                    : isPros
+                      ? 'rgba(59, 130, 246, 0.14)'
+                      : 'rgba(16, 185, 129, 0.14)',
+                  border: `1px solid ${
+                    isPinned
+                      ? 'rgba(212, 175, 55, 0.6)'
+                      : isPros
+                        ? 'rgba(96, 165, 250, 0.35)'
+                        : 'rgba(52, 211, 153, 0.35)'
+                  }`,
+                  padding: '2px 7px',
                   borderRadius: '4px',
-                  cursor: 'help',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
                 }}
               >
                 <BookOpen size={10} />
-                <span>Sources</span>
-              </span>
+                <span>{isPinned ? 'Sources (Pinned)' : 'Sources'}</span>
+              </button>
             )}
             <span style={{ fontSize: '0.72rem', color: '#64748B', whiteSpace: 'nowrap' }}>
               {timeStr}
@@ -513,11 +554,11 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
               fontWeight: isJudge ? 500 : 400,
               fontStyle: isJudge ? 'italic' : 'normal',
               color: isJudge ? '#FFFBEB' : '#F1F5F9',
-              lineHeight: 1.55,
+              lineHeight: 1.6,
               fontFamily: isJudge ? 'var(--font-serif)' : 'inherit',
             }}
           >
-            {formatted.introText}
+            {renderTextWithStatuteChips(formatted.introText)}
           </p>
         )}
 
@@ -525,14 +566,16 @@ const SingleBubble: React.FC<SingleBubbleProps> = ({
         {formatted.bodyParagraphs && formatted.bodyParagraphs.map((para, idx) => (
           <p
             key={idx}
+            className="para-stagger"
             style={{
               margin: idx === formatted.bodyParagraphs.length - 1 ? '0' : '0 0 8px 0',
-              fontSize: '0.86rem',
+              fontSize: '0.875rem',
               color: '#CBD5E1',
-              lineHeight: 1.55,
+              lineHeight: 1.6,
+              animationDelay: `${Math.min(idx * 65, 260)}ms`,
             }}
           >
-            {para}
+            {renderTextWithStatuteChips(para)}
           </p>
         ))}
 

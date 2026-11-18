@@ -469,6 +469,8 @@ def _format_agent_payload(node_name: str, update: dict[str, Any]) -> dict[str, A
             if getattr(analysis, "ml_case_type", None):
                 payload["ml_case_type"] = analysis.ml_case_type
                 payload["ml_top_predictions"] = list(getattr(analysis, "ml_top_predictions", []) or [])
+            if getattr(analysis, "ml_predicted_statutes", None):
+                payload["ml_predicted_statutes"] = list(analysis.ml_predicted_statutes)
     elif node_name == "prosecutor":
         pros = update.get("prosecution")
         if pros:
@@ -538,6 +540,8 @@ def _format_agent_payload(node_name: str, update: dict[str, Any]) -> dict[str, A
             payload["documentary_compliance"] = ev.documentary_compliance_assessment
             payload["missing_gaps"] = ev.missing_evidence_gaps
             payload["contradictions"] = ev.evidentiary_contradictions
+            payload["ml_detected_defects"] = list(getattr(ev, "ml_detected_defects", []) or [])
+            payload["theft_recovery_chain_audit"] = list(getattr(ev, "theft_recovery_chain_audit", []) or [])
             payload["items"] = [
                 {
                     "id": item.id,

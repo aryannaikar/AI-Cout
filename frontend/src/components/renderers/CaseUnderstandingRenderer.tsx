@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, FileBadge, FileText, Eye, ChevronDown, ChevronUp, ScrollText, Layers } from 'lucide-react';
+import { Users, FileBadge, FileText, Eye, ChevronDown, ChevronUp, ScrollText, Layers, Scale } from 'lucide-react';
 
 interface CaseUnderstandingRendererProps {
   payload: any;
@@ -53,6 +53,8 @@ export const CaseUnderstandingRenderer: React.FC<CaseUnderstandingRendererProps>
   const accusedList = payload.accused
     ? (Array.isArray(payload.accused) ? payload.accused.join(', ') : payload.accused)
     : 'Accused on Record';
+  const mlCaseType: string = typeof payload.ml_case_type === 'string' ? payload.ml_case_type : '';
+  const mlPredictedStatutes: string[] = Array.isArray(payload.ml_predicted_statutes) ? payload.ml_predicted_statutes : [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '4px' }}>
@@ -78,6 +80,62 @@ export const CaseUnderstandingRenderer: React.FC<CaseUnderstandingRendererProps>
           </p>
         )}
       </div>
+
+      {/* Stage-0 ML Statutory & Companion-Section Predictions */}
+      {(mlCaseType || mlPredictedStatutes.length > 0) && (
+        <div
+          style={{
+            background: 'rgba(15, 23, 42, 0.6)',
+            border: '1px solid rgba(56, 189, 248, 0.25)',
+            borderRadius: '8px',
+            padding: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: mlPredictedStatutes.length > 0 ? '8px' : '0', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Scale size={15} color="#38BDF8" />
+              <h5 style={{ margin: 0, fontSize: '0.82rem', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Stage-0 ML Statutory & Companion-Section Predictor
+              </h5>
+            </div>
+            {mlCaseType && (
+              <span
+                style={{
+                  background: 'rgba(212, 175, 55, 0.14)',
+                  border: '1px solid rgba(212, 175, 55, 0.35)',
+                  borderRadius: '4px',
+                  padding: '2px 8px',
+                  fontSize: '0.74rem',
+                  fontWeight: 600,
+                  color: '#FDE68A',
+                }}
+              >
+                {mlCaseType}
+              </span>
+            )}
+          </div>
+          {mlPredictedStatutes.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {mlPredictedStatutes.map((statute, idx) => (
+                <span
+                  key={idx}
+                  style={{
+                    background: 'rgba(56, 189, 248, 0.12)',
+                    border: '1px solid rgba(56, 189, 248, 0.35)',
+                    borderRadius: '5px',
+                    padding: '3px 9px',
+                    fontSize: '0.77rem',
+                    fontWeight: 600,
+                    color: '#BAE6FD',
+                  }}
+                >
+                  {statute}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Grid: Parties & Framed Charges */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>

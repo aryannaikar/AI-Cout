@@ -70,6 +70,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
 
   return (
     <div
+      className="modal-backdrop-animate"
       style={{
         position: 'fixed',
         top: 0,
@@ -86,7 +87,7 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
       }}
     >
       <div
-        className="glass-panel-court animate-fade-in"
+        className="glass-panel-court modal-unfold-animate"
         style={{
           width: '100%',
           maxWidth: '1020px',

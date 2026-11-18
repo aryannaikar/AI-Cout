@@ -55,6 +55,39 @@ _VERIFIED_STATUTORY_PROVISIONS: list[dict[str, Any]] = [
         "text": "Whoever commits robbery shall be punished with rigorous imprisonment up to ten years, and shall also be liable to fine.",
     },
     {
+        "keys": ("302", "murder"),
+        "historical_only": True,
+        "act_name": "Indian Penal Code, 1860",
+        "short_name": "IPC",
+        "section": "Section 302",
+        "title": "Punishment for murder",
+        "source_file": "IPC_1860.pdf",
+        "page": 77,
+        "text": "Whoever commits murder (culpable homicide amounting to murder under Section 300 IPC) shall be punished with death, or imprisonment for life, and shall also be liable to fine.",
+    },
+    {
+        "keys": ("section 34", "common intention", "r/w 34"),
+        "historical_only": True,
+        "act_name": "Indian Penal Code, 1860",
+        "short_name": "IPC",
+        "section": "Section 34",
+        "title": "Acts done by several persons in furtherance of common intention",
+        "source_file": "IPC_1860.pdf",
+        "page": 11,
+        "text": "When a criminal act is done by several persons in furtherance of the common intention of all, each of such persons is liable for that act in the same manner as if it were done by him alone. Prior meeting of minds and active participation must be established.",
+    },
+    {
+        "keys": ("420", "cheating"),
+        "historical_only": True,
+        "act_name": "Indian Penal Code, 1860",
+        "short_name": "IPC",
+        "section": "Section 420",
+        "title": "Cheating and dishonestly inducing delivery of property",
+        "source_file": "IPC_1860.pdf",
+        "page": 105,
+        "text": "Whoever cheats and thereby dishonestly induces the person deceived to deliver any property to any person, or to make, alter or destroy the whole or any part of a valuable security, shall be punished with imprisonment up to seven years, and shall also be liable to fine.",
+    },
+    {
         "keys": ("3(a)", "railway property", "r.p.(u.p.)", "rpup"),
         "historical_only": False,
         "act_name": "Railway Property (Unlawful Possession) Act, 1966",
@@ -175,9 +208,29 @@ class LegalResearchAgent:
             is_hist = bool(resolved_regime.get("is_historical"))
             case_blob = question.lower()
             if case is not None:
+                charges_list = getattr(case, "charges", []) or []
                 case_blob += " " + " ".join(
-                    f"{c.statute} {c.section} {c.description}" for c in (getattr(case, "charges", []) or [])
+                    f"{c.statute} {c.section} {c.description}" for c in charges_list
                 ).lower()
+                try:
+                    from app.services.ml_statute_predictor import MLStatutePredictor
+
+                    ml_preds = MLStatutePredictor.predict_for_case(case, question=question, top_k=6)
+                    has_ipc_charge = any(
+                        "ipc" in f"{c.statute} {c.section}".lower()
+                        or "indian penal code" in str(c.statute).lower()
+                        for c in charges_list
+                    )
+                    special_act_only = bool(charges_list) and not has_ipc_charge
+                    ml_tokens = [
+                        f"{p['search_key']} {p['section']}".lower()
+                        for p in ml_preds
+                        if not (special_act_only and p.get("short_name") == "IPC")
+                    ]
+                    if ml_tokens:
+                        case_blob += " " + " ".join(ml_tokens)
+                except Exception as ml_exc:
+                    logger.debug("ML statute prediction in LegalResearchAgent skipped: %s", ml_exc)
             for entry in _VERIFIED_STATUTORY_PROVISIONS:
                 if entry["historical_only"] and not is_hist:
                     continue

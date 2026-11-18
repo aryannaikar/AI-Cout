@@ -187,6 +187,16 @@ class CaseUnderstandingAgent:
                         case.proceeding_type = ml_pred.get("proceeding_hint")
         except Exception as ml_exc:
             logger.debug("Stage-0 ML classification skipped: %s", ml_exc)
+
+        try:
+            from app.services.ml_statute_predictor import MLStatutePredictor
+            statute_preds = MLStatutePredictor.predict_statutes(case_text, top_k=6, threshold=0.35)
+            if statute_preds:
+                case.ml_predicted_statutes = [
+                    f"{p['label']} ({p['confidence']:.2f})" for p in statute_preds
+                ]
+        except Exception as stat_exc:
+            logger.debug("Stage-0 ML statute prediction skipped: %s", stat_exc)
         return case
 
     def _heuristic_parse(self, text: str, source_filename: str) -> dict:

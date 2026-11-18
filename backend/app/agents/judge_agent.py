@@ -798,6 +798,12 @@ class JudgeAgent:
                 "(2) whether the recovered firearm/ammunition was properly sealed, deposited in the Malkhana with unbroken chain of custody, and examined by an armourer/FSL for live operability; "
                 "(3) whether valid previous sanction under Section 39 Arms Act is proved on record; and (4) under Section 27 Indian Evidence Act (or Section 23 BSA), only the exact information leading distinctly to discovery of a physical fact is admissible, never self-incriminating confession to police under Section 25 IEA. "
             )
+        if getattr(evidence_report, "theft_recovery_chain_audit", None) or getattr(evidence_report, "ml_detected_defects", None):
+            doctrinal_guidance += (
+                "Evaluate the 5-link theft/recovery chain audit and ml_detected_defects in evidence_analysis: "
+                "test property identity/ownership, exclusive conscious possession, independent panch witness compliance, "
+                "foundational theft before applying any presumption, and separate spot-recovery accused from co-accused implicated only by confessional statements. "
+            )
         prompt = (
             "Adjudicate this record independently. First identify the charges and ingredients; "
             "separate established, disputed, and unsupported facts; test both parties' arguments; "
