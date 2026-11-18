@@ -159,7 +159,19 @@ def detect_case_legal_regime(
         uncertain = True
         reasoning = "No reliable alleged-offence or FIR date, or explicit statutory charge, was extracted."
 
+    has_it_or_electronic = any(
+        tok in text_lower
+        for tok in (
+            "information technology", "it act", "65b", "section 63", "section 65",
+            "section 66", "electronic record", "cctv", "cdr", "cyber", "server log",
+        )
+    ) or (case is not None and any(
+        "it act" in c.statute.lower() or "information technology" in c.statute.lower()
+        for c in case.charges
+    ))
+
     if is_historical:
+        act_filters = HISTORICAL_ACT_FILTERS if has_it_or_electronic else ("IPC", "IEA", "CrPC", "Constitution")
         return {
             "is_historical": True,
             "regime": "historical",
@@ -171,9 +183,10 @@ def detect_case_legal_regime(
             "procedure_short": "CrPC",
             "reasoning": reasoning,
             "applicability_confidence": "uncertain" if uncertain else "high",
-            "allowed_act_filters": HISTORICAL_ACT_FILTERS,
+            "allowed_act_filters": act_filters,
         }
     else:
+        act_filters = MODERN_ACT_FILTERS if has_it_or_electronic else ("BNS", "BSA", "BNSS", "Constitution")
         return {
             "is_historical": False,
             "regime": "modern",
@@ -185,7 +198,7 @@ def detect_case_legal_regime(
             "procedure_short": "BNSS",
             "reasoning": reasoning,
             "applicability_confidence": "uncertain" if uncertain else "high",
-            "allowed_act_filters": MODERN_ACT_FILTERS,
+            "allowed_act_filters": act_filters,
         }
 
 

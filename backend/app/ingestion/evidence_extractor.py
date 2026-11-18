@@ -330,7 +330,7 @@ class EvidenceExtractor:
         # "Ex.PB/1 - Sketch of the pistol", "Ex.PC/1 - Copy of First Information Report",
         # "Ex. P-1: Seizure Memo"
         exhibit_line_pattern = re.compile(
-            r"\b(Ex\.\s*[A-Za-z0-9/]+(?:\s*&\s*Ex\.\s*[A-Za-z0-9/]+)?)\s*[:\-–]?\s*([^\n]+(?:\n(?!\s*(?:Ex\.|\d+\.|\bOnce\b|\bTo\b|\bPW|\bDW))[^\n]+)?)",
+            r"\b((?:Material\s+)?(?:(?:Ex|Ext)\.|[Ee]xhibit|Material\s+Object\s+No\.|MO)\s*[-–]?\s*(?:[A-Z]{0,3}[-/]?[0-9]+(?:/[0-9]+)?|[PD][A-Z](?:/[0-9]+)?)(?:\s*&\s*(?:(?:Ex|Ext)\.|[Ee]xhibit)\s*[-–]?\s*[A-Z0-9/\-]+)?)\s*[:\-–]?\s*([^\n]+(?:\n(?!\s*(?:(?:Ex|Ext)\.|[Ee]xhibit|\d+\.|\bOnce\b|\bTo\b|\bPW|\bDW))[^\n]+)?)",
             re.MULTILINE,
         )
 
@@ -344,15 +344,17 @@ class EvidenceExtractor:
                 # Handle combined exhibits like "Ex.P1 & Ex.P2"
                 individual_exs = [e.strip() for e in full_ex_str.split("&")]
                 for ex_str in individual_exs:
-                    clean_ex = ex_str.replace(" ", "")
+                    clean_ex = re.sub(r"\s+", " ", ex_str).strip()
                     # Ensure standard capitalization
-                    clean_ex = re.sub(r"^ex\.", "Ex.", clean_ex, flags=re.IGNORECASE)
+                    clean_ex = re.sub(r"^ext\.?", "Ext.", clean_ex, flags=re.IGNORECASE)
+                    clean_ex = re.sub(r"^exhibit\s+", "Exhibit ", clean_ex, flags=re.IGNORECASE)
+                    clean_ex = re.sub(r"^ex\.\s*", "Ex.", clean_ex, flags=re.IGNORECASE)
                     if clean_ex in seen_ex_nums:
                         continue
                     seen_ex_nums.add(clean_ex)
 
                     # Create sanitized evidence_id e.g. EX_P1, EX_PB_1, EX_PA
-                    ev_id = clean_ex.replace("Ex.", "EX_").replace("/", "_").replace("-", "_")
+                    ev_id = re.sub(r"[^A-Za-z0-9]+", "_", clean_ex).strip("_").upper()
 
                     # Classify evidence type
                     ev_type = self._classify_evidence_type(desc)

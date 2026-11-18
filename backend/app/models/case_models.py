@@ -200,6 +200,14 @@ class StructuredCase(BaseModel):
         default_factory=list,
         description="Evidentiary gaps, uncalled witnesses, or missing documents noted in the packet.",
     )
+    ml_case_type: Optional[str] = Field(
+        default=None,
+        description="Stage-0 ML intake classifier prediction (e.g. 'CRL', 'CRA', 'BA', 'REV').",
+    )
+    ml_top_predictions: list[str] = Field(
+        default_factory=list,
+        description="Top Stage-0 ML classifier predictions with decision scores.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -220,6 +228,7 @@ class StructuredCase(BaseModel):
                 "disputed_facts",
                 "undisputed_facts",
                 "missing_or_uncertain_info",
+                "ml_top_predictions",
             ),
         )
 

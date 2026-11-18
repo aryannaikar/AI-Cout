@@ -18,6 +18,7 @@ from app.models.evidence_models import (
 )
 from app.models.evidence_package_models import EvidencePackage
 from app.services.evidence_intelligence import EvidenceIntelligenceBuilder
+from app.services.legal_transition import detect_case_legal_regime
 from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,8 @@ class EvidenceAnalysisAgent:
         contradictions: list[str] = []
         missing_gaps: list[str] = []
 
+        is_historical = detect_case_legal_regime(case).get("is_historical", False) if case else False
+
         # Analyze each exhibit
         for ex in case.exhibits:
             ex_type = self._map_evidence_type(ex.exhibit_type)
@@ -69,11 +72,13 @@ class EvidenceAnalysisAgent:
             chain_ok = True
 
             if ex_type == EvidenceType.ELECTRONIC:
-                limitations.append("Requires statutory certification under Section 63 BSA to be admissible as secondary evidence.")
+                cert_law = "Section 65B of the Indian Evidence Act, 1872" if is_historical else "Section 63 BSA"
+                limitations.append(f"Requires statutory certification under {cert_law} to be admissible as secondary evidence.")
                 confidence = 0.70
 
             if "panchnama" in ex.title.lower() or "recovery" in ex.title.lower():
-                limitations.append("Must be supported by independent attesting witnesses under Section 23/100 CrPC/BSA.")
+                search_law = "Section 100 CrPC & Section 27 IEA" if is_historical else "Section 103 BNSS & Section 23 BSA"
+                limitations.append(f"Must be supported by independent attesting witnesses under {search_law}.")
 
             item = EvidenceItemAnalysis(
                 id=ex.exhibit_id,
@@ -134,13 +139,24 @@ class EvidenceAnalysisAgent:
         # Check for BSA Section 61 / 63 compliance on electronic records
         has_electronic = any(e.type == EvidenceType.ELECTRONIC for e in analyzed_items)
         if has_electronic:
-            compliance_note = (
-                "Electronic records are present on record. Under Bharatiya Sakshya Adhiniyam, 2023 "
-                "(Sections 57, 61, 63), a certificate from a person occupying a responsible official position "
-                "in relation to the operation of the device is mandatory unless produced from proper custody."
-            )
+            if is_historical:
+                compliance_note = (
+                    "Electronic records are present on record. Under Indian Evidence Act, 1872 "
+                    "(Sections 65A and 65B), a certificate from a responsible person in relation "
+                    "to the operation of the device is mandatory unless the original device is produced."
+                )
+            else:
+                compliance_note = (
+                    "Electronic records are present on record. Under Bharatiya Sakshya Adhiniyam, 2023 "
+                    "(Sections 57, 61, 63), a certificate from a person occupying a responsible official position "
+                    "in relation to the operation of the device is mandatory unless produced from proper custody."
+                )
         else:
-            compliance_note = "Documentary and physical evidence governed by primary and secondary proof standards under BSA."
+            compliance_note = (
+                "Documentary and physical evidence governed by primary and secondary proof standards under Indian Evidence Act, 1872 (Sections 61, 62, 65)."
+                if is_historical
+                else "Documentary and physical evidence governed by primary and secondary proof standards under BSA."
+            )
 
         summary = (
             f"The evidentiary record for '{case.case_title}' consists of {len(case.exhibits)} exhibits "
@@ -177,22 +193,29 @@ class EvidenceAnalysisAgent:
         contradictions: list[str] = [c.description for c in package.contradictions]
         missing_gaps: list[str] = [m.description for m in package.missing_evidence]
 
+        is_historical = detect_case_legal_regime(case).get("is_historical", False) if case else False
+
         # 1. Analyze exhibits
+        seen_ex_keys: set[str] = set()
         for ex in package.exhibits:
+            seen_ex_keys.add(ex.exhibit_number.strip().upper())
             ex_type = self._map_evidence_type(ex.evidence_type)
             limitations = []
             confidence = 0.85
             chain_ok = True
 
             if ex_type == EvidenceType.ELECTRONIC:
-                limitations.append("Requires certificate under Section 63 BSA for secondary electronic admissibility.")
+                cert_sec = "Section 65B IEA" if is_historical else "Section 63 BSA"
+                limitations.append(f"Requires certificate under {cert_sec} for secondary electronic admissibility.")
                 confidence = 0.70
 
             if "memo" in ex.evidence_type or "seizure" in ex.description.lower() or "recovery" in ex.description.lower():
-                limitations.append("Recovery memo admissibility requires attestation by independent panchas under BSA.")
+                ev_law = "Section 100 CrPC & IEA" if is_historical else "BNSS & BSA"
+                limitations.append(f"Recovery memo admissibility requires attestation by independent panchas under {ev_law}.")
 
             if ex.original_or_copy == "photocopy":
-                limitations.append("Photocopy tendered; secondary evidence conditions under Section 58-61 BSA apply.")
+                sec_law = "Sections 63-65 Indian Evidence Act, 1872" if is_historical else "Sections 58-61 BSA"
+                limitations.append(f"Photocopy tendered; secondary evidence conditions under {sec_law} apply.")
                 confidence = 0.75
 
             analyzed_items.append(
@@ -209,6 +232,27 @@ class EvidenceAnalysisAgent:
                     chain_of_custody_intact=chain_ok,
                 )
             )
+
+        if case and case.exhibits:
+            for cex in case.exhibits:
+                ckey = cex.exhibit_id.strip().upper()
+                if ckey not in seen_ex_keys:
+                    seen_ex_keys.add(ckey)
+                    ex_type = self._map_evidence_type(cex.exhibit_type)
+                    analyzed_items.append(
+                        EvidenceItemAnalysis(
+                            id=cex.exhibit_id.strip(),
+                            type=ex_type,
+                            description=f"{cex.exhibit_id}: {cex.title} — {cex.description}",
+                            source=f"Marked by {cex.marked_by}" if cex.marked_by else cex.exhibit_id,
+                            related_witness=cex.marked_by or None,
+                            supports=[f"Fact of recovery/existence of {cex.title}"],
+                            contradicts=[],
+                            limitations=[],
+                            confidence=0.85,
+                            chain_of_custody_intact=True,
+                        )
+                    )
 
         # 2. Analyze physical evidence
         for pe in package.physical_evidence:
@@ -279,14 +323,23 @@ class EvidenceAnalysisAgent:
         intel = EvidenceIntelligenceBuilder.build(case=case, package=package)
 
         has_electronic = any(e.type == EvidenceType.ELECTRONIC for e in analyzed_items)
-        compliance_note = (
-            "Electronic records present; requires Section 63 BSA compliance."
-            if has_electronic
-            else "Documentary, material, and oral evidence governed by primary proof and Section 57/61 BSA."
-        )
+        if has_electronic:
+            compliance_note = (
+                "Electronic records present; requires Section 65B Indian Evidence Act compliance."
+                if is_historical
+                else "Electronic records present; requires Section 63 BSA compliance."
+            )
+        else:
+            compliance_note = (
+                "Documentary, material, and oral evidence governed by primary proof and Sections 61/62/65 Indian Evidence Act, 1872."
+                if is_historical
+                else "Documentary, material, and oral evidence governed by primary proof and Section 57/61 BSA."
+            )
 
+        marked_exhibits_count = sum(1 for c in intel.get("canonical_exhibits", []) if getattr(c, "is_formally_marked", False))
+        exhibit_count_display = max(len(package.exhibits), marked_exhibits_count, len(case.exhibits) if case else 0)
         summary = (
-            f"The evidentiary record for '{case_title}' consists of {len(package.exhibits)} marked exhibits, "
+            f"The evidentiary record for '{case_title}' consists of {exhibit_count_display} marked exhibits, "
             f"{len(package.prosecution_witnesses)} prosecution witnesses, and {len(package.defence_witnesses)} defence witnesses. "
             f"Found {len(corroboration_links)} evidentiary links, {len(contradictions)} contradictions, "
             f"and {len(missing_gaps)} identified omissions."

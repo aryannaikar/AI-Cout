@@ -149,6 +149,25 @@ class CaseUnderstandingAgent:
                 sec_nums = {s.casefold() for s in re.findall(r"\b\d+[A-Za-z]?\b", ch.section)}
                 if not (sec_nums & hist_only):
                     ch.record_status = "current"
+
+        # Stage-0 ML intake classifier (explicit PDF headers retain priority for proceeding_type)
+        try:
+            from app.services.ml_case_classifier import MLCaseTypeClassifier
+            ml_pred = MLCaseTypeClassifier.classify_text(case_text)
+            if ml_pred:
+                case.ml_case_type = f"{ml_pred['case_type']} ({ml_pred['label_description']})"
+                case.ml_top_predictions = list(ml_pred.get("top_predictions") or [])
+                if not case.proceeding_type:
+                    if re.search(r"\b(?:criminal\s+revision|cr\.?\s*rev\.?)\b", case_text, re.IGNORECASE):
+                        case.proceeding_type = "revision"
+                    elif re.search(r"\b(?:criminal\s+appeal|crl\.?\s*a\.?)\b", case_text, re.IGNORECASE):
+                        case.proceeding_type = "appeal"
+                    elif re.search(r"\b(?:bail\s+application|anticipatory\s+bail)\b", case_text, re.IGNORECASE):
+                        case.proceeding_type = "bail"
+                    else:
+                        case.proceeding_type = ml_pred.get("proceeding_hint")
+        except Exception as ml_exc:
+            logger.debug("Stage-0 ML classification skipped: %s", ml_exc)
         return case
 
     def _heuristic_parse(self, text: str, source_filename: str) -> dict:

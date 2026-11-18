@@ -143,7 +143,7 @@ class EvidenceIntelligenceBuilder:
         if case and case.exhibits:
             for ex in case.exhibits:
                 key = ex.exhibit_id.strip().upper()
-                is_marked = bool(re.search(r"\b(?:ex\.?|mo)\b", ex.exhibit_id, re.IGNORECASE))
+                is_marked = bool(re.search(r"\b(?:ex(?:t|hibit)?\.?|mo|material)\b", ex.exhibit_id, re.IGNORECASE))
                 if key not in by_id:
                     by_id[key] = CanonicalExhibitRecord(
                         exhibit_id=ex.exhibit_id.strip(),
@@ -224,16 +224,42 @@ class EvidenceIntelligenceBuilder:
                     )
                 )
         elif package:
-            for ev in package.timeline_of_events:
+            for ev in getattr(package, "timeline_of_events", []) or []:
                 events.append(
                     TimelineEvent(
                         event_id=f"EVT-{idx:02d}",
                         stage="incident",
-                        date_text=ev.date,
-                        time_text=ev.time,
-                        location=ev.location,
-                        description=ev.event_description,
-                        source_reference=f"Page {ev.source_page}" if ev.source_page else "EvidencePackage",
+                        date_text=getattr(ev, "date", None),
+                        time_text=getattr(ev, "time", None),
+                        location=getattr(ev, "location", None),
+                        description=getattr(ev, "event_description", ""),
+                        source_reference=f"Page {ev.source_page}" if getattr(ev, "source_page", None) else "EvidencePackage",
+                    )
+                )
+                idx += 1
+            for proc in getattr(package, "procedural_records", []) or []:
+                events.append(
+                    TimelineEvent(
+                        event_id=f"EVT-{idx:02d}",
+                        stage="investigation",
+                        date_text=getattr(proc, "date", None),
+                        time_text=None,
+                        location=None,
+                        description=f"{getattr(proc, 'procedure_type', 'Procedure')}: {getattr(proc, 'description', '') or getattr(proc, 'related_document', '')}".strip(": "),
+                        source_reference=f"Page {proc.source_page}" if getattr(proc, "source_page", None) else "EvidencePackage",
+                    )
+                )
+                idx += 1
+            for rec in getattr(package, "recoveries", []) or []:
+                events.append(
+                    TimelineEvent(
+                        event_id=f"EVT-{idx:02d}",
+                        stage="recovery_seizure",
+                        date_text=getattr(rec, "date", None),
+                        time_text=None,
+                        location=getattr(rec, "location", None),
+                        description=f"Recovery of {getattr(rec, 'recovered_item', 'item')}",
+                        source_reference=f"Page {rec.source_page}" if getattr(rec, "source_page", None) else "EvidencePackage",
                     )
                 )
                 idx += 1

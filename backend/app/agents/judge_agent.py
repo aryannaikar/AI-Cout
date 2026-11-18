@@ -128,18 +128,28 @@ class JudgeAgent:
         regime = detect_case_legal_regime(case)
         is_stolen_prop = any(tok in charge_blob for tok in ("411", "379", "317", "303", "stolen", "theft"))
         if is_stolen_prop and regime.get("is_historical"):
-            companion_provisions = [
+            companion_provisions.extend([
                 "Section 379 IPC",
                 "Section 102 of the Indian Evidence Act",
                 "Section 114 of the Indian Evidence Act",
-            ]
-            research_citations.extend(companion_provisions)
+            ])
         elif is_stolen_prop:
-            companion_provisions = [
+            companion_provisions.extend([
                 "Section 303 BNS",
                 "Section 105 of the Bharatiya Sakshya Adhiniyam",
                 "Section 119 of the Bharatiya Sakshya Adhiniyam",
-            ]
+            ])
+
+        if any(tok in charge_blob for tok in ("arms", "25", "27")) and "arms" in charge_blob:
+            companion_provisions.extend([
+                "Section 25 Arms Act",
+                "Section 39 Arms Act",
+                "Section 27 of the Indian Evidence Act" if regime.get("is_historical") else "Section 23 of the Bharatiya Sakshya Adhiniyam",
+                "Section 100 CrPC" if regime.get("is_historical") else "Section 103 BNSS",
+            ])
+
+        if companion_provisions:
+            companion_provisions = list(dict.fromkeys(companion_provisions))
             research_citations.extend(companion_provisions)
 
         return {
@@ -754,6 +764,12 @@ class JudgeAgent:
                 "For connected revisions under Section 3(a) of the Railway Property (Unlawful Possession) Act, 1966: evaluate each revision and accused separately—uphold CONVICTION for accused apprehended at the spot with railway property proved by raiding-team witnesses and railway expert PW-2 (Ext.-2), "
                 "and render ACQUITTAL for any co-accused not apprehended at the spot with no recovery who was implicated only by co-accused confessional statements (Ext.-4, Ext.-4/1), yielding PARTIAL CONVICTION overall. "
             )
+        if "arms" in charge_blob:
+            doctrinal_guidance += (
+                "For Arms Act / public-place recovery trials: evaluate (1) whether independent public witnesses were joined during recovery/seizure under Section 100(4) CrPC (or Section 103 BNSS); "
+                "(2) whether the recovered firearm/ammunition was properly sealed, deposited in the Malkhana with unbroken chain of custody, and examined by an armourer/FSL for live operability; "
+                "(3) whether valid previous sanction under Section 39 Arms Act is proved on record; and (4) under Section 27 Indian Evidence Act (or Section 23 BSA), only the exact information leading distinctly to discovery of a physical fact is admissible, never self-incriminating confession to police under Section 25 IEA. "
+            )
         prompt = (
             "Adjudicate this record independently. First identify the charges and ingredients; "
             "separate established, disputed, and unsupported facts; test both parties' arguments; "
@@ -762,7 +778,7 @@ class JudgeAgent:
             "Address missing information and any failed/empty research_status explicitly. Treat verified_charges as the only charges being decided; do not include provisions mentioned only in procedural history or against another accused. Use each exact charge_key once in findings_per_charge. "
             "When multiple decision_subjects or connected_proceedings exist, populate accused_findings with a separate finding for EACH distinct accused/petitioner and proceeding without merging similarly-named persons. "
             + doctrinal_guidance
-            + "In witness_assessment, name and evaluate every witness on record individually by ID (e.g., PW-1, PW-2, PW-3, PW-4, PW-5, PW-6). In case_background, state concrete chronological facts from the record. Leave ingredient_checklists as [] and scrutiny_report as null (they are populated separately). Keep each section and issue evaluation concise (2–4 focused sentences each) so the JSON response remains compact. "
+            + "In witness_assessment, name and evaluate every witness present on record individually by their exact ID. In case_background, state concrete chronological facts from the record. Leave ingredient_checklists as [] and scrutiny_report as null (they are populated separately). Keep each section and issue evaluation concise (2–4 focused sentences each) so the JSON response remains compact. "
             "Charge references identify allegations from the record, not retrieved statutory text; if historical statutory text is unavailable, say so and do not invent wording or interpretation. Findings must cite the supplied witness/exhibit IDs "
             "or exact supplied legal citations where available. Do not treat submissions as proof. "
             "If law is unavailable, state that limitation. Match the existing Judgment schema exactly.\n\n"

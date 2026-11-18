@@ -19,6 +19,7 @@ from app.models.judgment_models import (
     StatementType,
 )
 from app.models.legal_models import LegalResearchResult, WebResearchResult
+from app.services.legal_transition import detect_case_legal_regime
 from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,8 @@ class DefenseAgent:
                 )
             )
 
+        is_historical = detect_case_legal_regime(case).get("is_historical", False)
+
         # LEGAL_RULE
         if legal_research and getattr(legal_research, "status", "completed") == "completed" and legal_research.citations:
             top_cit = legal_research.citations[0]
@@ -118,18 +121,28 @@ class DefenseAgent:
                 )
             )
         else:
+            burden_cite = (
+                "Article 21 of the Constitution of India and Sections 101 & 102 of the Indian Evidence Act, 1872"
+                if is_historical
+                else "Article 21 of the Constitution of India and Section 104 BSA"
+            )
             components.append(
                 ArgumentComponent(
                     statement_type=StatementType.LEGAL_RULE,
                     content=(
-                        "Under Article 21 of the Constitution of India and Section 104 BSA: The burden of proving guilt lies entirely on the prosecution. "
+                        f"Under {burden_cite}: The burden of proving guilt lies entirely on the prosecution. "
                         "The accused does not have to prove innocence — guilt must be established beyond all reasonable doubt, not just on probability."
                     ),
-                    source_reference="Constitution of India Art. 21 & BSA",
+                    source_reference=burden_cite,
                 )
             )
 
         # INFERENCE
+        adverse_cite = (
+            "Adverse inference under Section 114(g) of the Indian Evidence Act, 1872"
+            if is_historical
+            else "Adverse inference under Section 119 BSA"
+        )
         components.append(
             ArgumentComponent(
                 statement_type=StatementType.INFERENCE,
@@ -137,7 +150,7 @@ class DefenseAgent:
                     "Because no independent civilian witnesses were brought in during the recovery, even though they were available nearby, "
                     "the Court should treat the alleged recovery as doubtful and suspect."
                 ),
-                source_reference="Adverse inference under Section 119 BSA",
+                source_reference=adverse_cite,
             )
         )
 
@@ -170,8 +183,9 @@ class DefenseAgent:
             "No independent civilian witnesses were present during the alleged seizure.",
         ]
         if evidence_report and any(e.type == EvidenceType.ELECTRONIC for e in evidence_report.evidence_items):
+            elec_sec = "Section 65B of the Indian Evidence Act, 1872" if is_historical else "Section 63 BSA"
             reasonable_doubt_grounds.append(
-                "Electronic records relied upon by prosecution lack mandatory certification under Section 63 BSA."
+                f"Electronic records relied upon by prosecution lack mandatory certification under {elec_sec}."
             )
 
         # Missing evidence highlighted

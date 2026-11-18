@@ -459,12 +459,16 @@ def _format_agent_payload(node_name: str, update: dict[str, Any]) -> dict[str, A
     if node_name == "case_understanding":
         analysis = update.get("case_analysis")
         if analysis:
-            payload["summary"] = f"Case Registered: {analysis.case_title} ({analysis.court_identifier}). Accused: {', '.join(analysis.accused)}. Allegations: {analysis.allegations_summary}"
+            ml_note = f" [ML Docket Class: {analysis.ml_case_type}]" if getattr(analysis, "ml_case_type", None) else ""
+            payload["summary"] = f"Case Registered: {analysis.case_title} ({analysis.court_identifier}).{ml_note} Accused: {', '.join(analysis.accused)}. Allegations: {analysis.allegations_summary}"
             payload["charges"] = [f"{c.statute} {c.section}: {c.description}" for c in analysis.charges]
             payload["facts"] = analysis.prosecution_facts
             payload["defense_plea"] = analysis.defense_facts
             payload["witnesses"] = [f"{w.witness_id}: {w.witness_name}" for w in analysis.witnesses]
             payload["exhibits"] = [f"{e.exhibit_id}: {e.title} ({e.exhibit_type})" for e in analysis.exhibits]
+            if getattr(analysis, "ml_case_type", None):
+                payload["ml_case_type"] = analysis.ml_case_type
+                payload["ml_top_predictions"] = list(getattr(analysis, "ml_top_predictions", []) or [])
     elif node_name == "prosecutor":
         pros = update.get("prosecution")
         if pros:
