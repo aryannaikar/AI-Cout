@@ -13,6 +13,7 @@ interface CourtroomChatProps {
   judgment: Judgment | null;
   onOpenJudgment: () => void;
   onOpenComparison?: () => void;
+  onOpenReplay?: () => void;
   caseTitle?: string;
 }
 
@@ -81,7 +82,7 @@ export const CourtroomChat: React.FC<CourtroomChatProps> = ({
   judgment,
   onOpenJudgment,
   onOpenComparison,
-  caseTitle,
+  onOpenReplay,  caseTitle,
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [showJumpButton, setShowJumpButton] = useState(false);
@@ -666,6 +667,30 @@ export const CourtroomChat: React.FC<CourtroomChatProps> = ({
               >
                 <Scale size={18} />
                 <span>COMPARE REAL JUDGMENT</span>
+              </button>
+            )}
+
+            {judgment && onOpenReplay && (
+              <button
+                onClick={onOpenReplay}
+                style={{
+                  background: 'linear-gradient(135deg, #7C3AED 0%, #4C1D95 100%)',
+                  color: '#F5F3FF',
+                  border: '1.5px solid #A78BFA',
+                  borderRadius: '8px',
+                  padding: '12px 28px',
+                  fontSize: '0.94rem',
+                  fontFamily: 'var(--font-serif)',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 0 18px rgba(124, 58, 237, 0.45)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+                title="Watch a short animated cartoon courtroom replay of this completed case"
+              >
+                <span>🎬 WATCH COURTROOM REPLAY</span>
               </button>
             )}
           </div>

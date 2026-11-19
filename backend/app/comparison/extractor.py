@@ -592,6 +592,25 @@ class JudgmentNormalizer:
         m2 = re.search(r"Case:\s*([^\n]+)", text)
         if m2:
             return m2.group(1).strip()
+
+        # Multi-line court caption: "<Party> ... Versus ... <Party>"
+        head = re.sub(r"[ \t]+", " ", text[:4000])
+        m3 = re.search(
+            r"([A-Z][A-Za-z\.\s]{2,60}?)\s*\.{0,}\s*(?:Petitioners?|Appellants?|Applicants?)?\s*[\r\n]+\s*(?:v\.|vs\.?|versus)\s*[\r\n]*\s*([A-Z][A-Za-z\.\s]{2,60}?)\s*(?:\.{2,}|[\r\n]|Respondents?|Opposite)",
+            head,
+            re.IGNORECASE,
+        )
+        if m3:
+            a = re.sub(r"\s+", " ", m3.group(1)).strip(" .")
+            a = re.sub(r"(?i)^in the\s+(?:high|supreme|sessions|district)?\s*court(?:\s+(?:of|at)\s+(?:judicature\s+at\s+)?[A-Za-z]+)?\s+", "", a)
+            b = re.sub(r"\s+", " ", m3.group(2)).strip(" .")
+            if a and b:
+                return f"{a} v. {b}"
+
+        # Fall back to the case number so cases stay distinguishable
+        num = cls._extract_case_number(text)
+        if num:
+            return num.strip()
         return "State v. Accused"
 
     @classmethod

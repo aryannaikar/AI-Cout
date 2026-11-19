@@ -281,6 +281,7 @@ export function App() {
                   if (judgment) setIsJudgmentModalOpen(true);
                 }}
                 onOpenComparison={() => setIsComparisonModalOpen(true)}
+                onOpenReplay={() => window.open(`/courtroom-replay/${encodeURIComponent(activeCaseId)}`, '_blank', 'noopener')}
                 caseTitle={uploadedCase?.filename}
               />
             </div>

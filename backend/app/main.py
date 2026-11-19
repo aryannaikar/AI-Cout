@@ -46,6 +46,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.comparison_routes import router as comparison_router
 from app.api.court_routes import router as court_router
+from app.api.replay_routes import router as replay_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,6 +71,7 @@ app.add_middleware(
 
 # Register API routes
 app.include_router(court_router, prefix="/api/court", tags=["court"])
+app.include_router(replay_router, prefix="/api/replay", tags=["replay"])
 app.include_router(comparison_router, prefix="/api", tags=["comparison"])
 app.include_router(comparison_router, prefix="/api/court", tags=["comparison"])
 

@@ -24,6 +24,16 @@ from app.comparison.scoring import ScoringEngine
 
 logger = logging.getLogger(__name__)
 
+_GENERIC_TITLES = {"", "state v. accused", "criminal proceeding on record", "present criminal proceeding"}
+
+
+def _pick_case_title(*candidates: Optional[str]) -> str:
+    """Prefer the first specific title; fall back to a generic one only if nothing else exists."""
+    for c in candidates:
+        if c and c.strip().lower() not in _GENERIC_TITLES:
+            return c.strip()
+    return next((c for c in candidates if c), "State v. Accused")
+
 
 class ComparisonService:
     """
@@ -212,7 +222,7 @@ class ComparisonService:
         timestamp = datetime.now().isoformat()
         case_info = {
             "case_id": case_id,
-            "case_title": case_title or real_norm.case_title or ai_norm.case_title,
+            "case_title": _pick_case_title(case_title, real_norm.case_title, ai_norm.case_title),
             "presiding_court": presiding_court or real_norm.presiding_court or "Supreme Court of India",
             "date_of_decision": date_of_decision or real_norm.date_of_decision or ai_norm.date_of_decision,
             "identity_validation": identity_validation,

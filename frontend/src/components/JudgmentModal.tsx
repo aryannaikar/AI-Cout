@@ -187,6 +187,17 @@ PRONOUNCED IN OPEN COURT.
               <span>JSON</span>
             </a>
 
+            <a
+              href={`/courtroom-replay/${encodeURIComponent(caseId)}`}
+              target="_blank"
+              rel="noopener"
+              className="btn-secondary"
+              style={{ textDecoration: 'none' }}
+              title="Watch a short animated courtroom replay of this completed case"
+            >
+              <span>🎬 Watch Courtroom Replay</span>
+            </a>
+
             <button
               onClick={() => setIsComparisonOpen(true)}
               style={{

@@ -143,6 +143,12 @@ export const ComparisonModal: React.FC<ComparisonModalProps> = ({ caseId, judgme
               <h2 style={{ margin: '2px 0 0 0', fontSize: '1.25rem', color: '#F8FAFC' }}>
                 AI Judgment vs Real Court Judgment Comparison
               </h2>
+              <div style={{ marginTop: '4px', fontSize: '0.88rem', color: '#94A3B8' }}>
+                Case:{' '}
+                <strong style={{ color: 'var(--gold-primary)' }}>
+                  {report?.case_title || judgment?.case_title || caseId}
+                </strong>
+              </div>
             </div>
           </div>
 
