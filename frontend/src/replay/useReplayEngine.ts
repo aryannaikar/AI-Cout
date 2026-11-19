@@ -33,9 +33,9 @@ function pickVoices(all: SpeechSynthesisVoice[], lang: 'en' | 'hi' = 'en'): Voic
   const m2 = males.find((v) => v !== m1) ?? null;
   const fallback = pool[0] ?? null;
   return {
-    judge: { voice: female ?? fallback, pitch: 1.03, rate: 0.98 },
-    prosecutor: { voice: m1 ?? fallback, pitch: m2 ? 0.95 : 0.9, rate: 1.02 },
-    defense: { voice: m2 ?? m1 ?? fallback, pitch: m2 ? 1.01 : 1.06, rate: 1.04 },
+    judge: { voice: female ?? fallback, pitch: 0.9, rate: 0.94 },
+    prosecutor: { voice: m1 ?? fallback, pitch: m2 ? 0.78 : 0.72, rate: 0.98 },
+    defense: { voice: m2 ?? m1 ?? fallback, pitch: m2 ? 0.86 : 0.81, rate: 1.01 },
   };
 }
 
