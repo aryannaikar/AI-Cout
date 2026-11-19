@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Literal, Optional
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class StatementType(str, Enum):
@@ -253,6 +253,21 @@ class Judgment(BaseModel):
     findings_per_charge: dict[str, str] = Field(
         description="Section 9: Specific finding per charge (e.g. {'Section 303 BNS': 'Guilty', 'Section 66 IT Act': 'Acquitted'})."
     )
+
+    @field_validator("findings_per_charge", mode="before")
+    @classmethod
+    def _coerce_findings_dict_values(cls, v):
+        if not isinstance(v, dict):
+            return {}
+        out = {}
+        for k, val in v.items():
+            if isinstance(val, dict):
+                out[str(k)] = "; ".join(f"{sub_k}: {sub_v}" for sub_k, sub_v in val.items())
+            elif isinstance(val, list):
+                out[str(k)] = "; ".join(str(x) for x in val)
+            else:
+                out[str(k)] = str(val)
+        return out
     accused_findings: list[AccusedFinding] = Field(
         default_factory=list,
         description="Individualized findings per accused/petitioner across connected proceedings or multi-accused trials.",

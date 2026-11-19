@@ -88,6 +88,39 @@ _VERIFIED_STATUTORY_PROVISIONS: list[dict[str, Any]] = [
         "text": "Whoever cheats and thereby dishonestly induces the person deceived to deliver any property to any person, or to make, alter or destroy the whole or any part of a valuable security, shall be punished with imprisonment up to seven years, and shall also be liable to fine.",
     },
     {
+        "keys": ("378", "379", "380", "411", "theft"),
+        "historical_only": True,
+        "act_name": "Indian Penal Code, 1860",
+        "short_name": "IPC",
+        "section": "Section 378",
+        "title": "Theft (foundational definition)",
+        "source_file": "IPC_1860.pdf",
+        "page": 95,
+        "text": "Whoever, intending to take dishonestly any moveable property out of the possession of any person without that person's consent, moves that property in order to such taking, is said to commit theft.",
+    },
+    {
+        "keys": ("425", "427", "mischief"),
+        "historical_only": True,
+        "act_name": "Indian Penal Code, 1860",
+        "short_name": "IPC",
+        "section": "Section 425",
+        "title": "Mischief (foundational definition)",
+        "source_file": "IPC_1860.pdf",
+        "page": 107,
+        "text": "Whoever with intent to cause, or knowing that he is likely to cause, wrongful loss or damage to the public or to any person, causes the destruction of any property, or any such change in any property or in the situation thereof as destroys or diminishes its value or utility, commits mischief.",
+    },
+    {
+        "keys": ("441", "447", "448", "trespass"),
+        "historical_only": True,
+        "act_name": "Indian Penal Code, 1860",
+        "short_name": "IPC",
+        "section": "Section 441",
+        "title": "Criminal trespass (foundational definition)",
+        "source_file": "IPC_1860.pdf",
+        "page": 111,
+        "text": "Whoever enters into or upon property in the possession of another with intent to commit an offence or to intimidate, insult or annoy any person in possession of such property commits criminal trespass.",
+    },
+    {
         "keys": ("3(a)", "railway property", "r.p.(u.p.)", "rpup"),
         "historical_only": False,
         "act_name": "Railway Property (Unlawful Possession) Act, 1966",
@@ -231,10 +264,18 @@ class LegalResearchAgent:
                         case_blob += " " + " ".join(ml_tokens)
                 except Exception as ml_exc:
                     logger.debug("ML statute prediction in LegalResearchAgent skipped: %s", ml_exc)
+            is_arms_case = bool(
+                re.search(r"\b(?:arms\s+act|firearm|pistol|revolver|country-?made\s+gun|rifle|ammunition|cartridge)\b", case_blob)
+            )
             for entry in _VERIFIED_STATUTORY_PROVISIONS:
                 if entry["historical_only"] and not is_hist:
                     continue
-                if any(k in case_blob for k in entry["keys"]):
+                if entry["short_name"] == "Arms_Act" and not is_arms_case:
+                    continue
+                if any(
+                    re.search(rf"\b{re.escape(k)}\b", case_blob) if k.isalnum() else k in case_blob
+                    for k in entry["keys"]
+                ):
                     cit = f"{entry['act_name']}, {entry['section']}"
                     injected_provisions.append(
                         ApplicableProvision(

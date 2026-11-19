@@ -93,9 +93,10 @@ class CaseUnderstandingAgent:
             "1. Ground all analysis strictly in the provided text. Do NOT introduce electronic record issues (e.g. Section 63 BSA / 65B IEA) unless electronic evidence is actually present in the case packet.\n"
             "2. Ground charges strictly in the exact statute explicitly named in the text (e.g., IPC 1860, BNS 2023, Railway Property (Unlawful Possession) Act 1966, Arms Act, IT Act). NEVER infer or substitute an Act from a section number alone.\n"
             "3. Extract proceeding_type and decision_subject only when the packet explicitly identifies the current trial, appeal, revision, or named accused/appellant. Keep them null if unclear.\n"
-            "4. If connected proceedings exist (e.g., two Criminal Revisions or Appeals heard together), populate connected_proceedings with each proceeding_id and its distinct accused_or_petitioners. Never merge similarly-named persons (e.g., 'Md. Israful Ansari' vs 'Israfil Ansari').\n"
+            "4. If connected proceedings exist (e.g., two Criminal Revisions or Appeals heard together), populate connected_proceedings with each proceeding_id and its distinct accused_or_petitioners. Never merge two similarly-named persons.\n"
             "5. Keep charges tied to their named accused and set Charge.record_status: current only for charges whose liability is presently before the court; procedural_history for earlier charges/findings not under current review; other_accused for charges belonging to another accused; uncertain if unclear. In appeals identify the order/count under appeal. Never convert allegations or prior charges into current charges.\n"
-            "6. Identify any missing or uncertain evidentiary items (e.g. absence of independent public witnesses, uncalled witnesses, missing documents) in missing_or_uncertain_info.\n\n"
+            "6. Identify any missing or uncertain evidentiary items (e.g. absence of independent public witnesses, uncalled witnesses, missing documents) in missing_or_uncertain_info.\n"
+            "7. NEVER label a co-accused or accused person as a Prosecution Witness (PW-1, PW-2, etc.) unless the text explicitly states they turned approver or deposed as a prosecution witness.\n\n"
             f"Case Packet Text:\n{case_text[:20000]}"
         )
 
@@ -109,6 +110,19 @@ class CaseUnderstandingAgent:
         # Ensure missing_or_uncertain_info has items if noted in text
         if not res.missing_or_uncertain_info and fallback_data.get("missing_or_uncertain_info"):
             res.missing_or_uncertain_info = fallback_data["missing_or_uncertain_info"]
+
+        # Merge any explicitly detected statutory charges from _heuristic_parse that the LLM omitted
+        if fallback_data.get("charges"):
+            from app.models.case_models import Charge
+            existing_secs = {
+                re.sub(r"[^0-9a-z()]", "", str(c.section).lower().replace("section", ""))
+                for c in (res.charges or [])
+            }
+            for fc in fallback_data["charges"]:
+                fc_sec = re.sub(r"[^0-9a-z()]", "", str(fc.get("section", "")).lower().replace("section", ""))
+                if fc_sec and fc_sec not in existing_secs:
+                    res.charges.append(Charge(**fc))
+                    existing_secs.add(fc_sec)
 
         return self._post_process_case(res, case_text)
 
@@ -219,15 +233,43 @@ class CaseUnderstandingAgent:
         charges = []
         explicit_patterns = [
             (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?(?:\([a-z0-9]+\))?)\s*(?:of\s+(?:the\s+)?)?(?:Railway\s+Property\s*\(Unlawful\s+Possession\)\s*Act(?:,\s*1966)?|R\.?P\.?\(?U\.?P\.?\)?\s*Act)", "Railway Property (Unlawful Possession) Act, 1966"),
-            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?)\s*(?:of\s+(?:the\s+)?)?(?:Indian\s+Penal\s+Code(?:,\s*1860)?|IPC)", "Indian Penal Code, 1860"),
-            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?)\s*(?:of\s+(?:the\s+)?)?(?:Bharatiya\s+Nyaya\s+Sanhita(?:,\s*2023)?|BNS)", "Bharatiya Nyaya Sanhita, 2023"),
-            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?)\s*(?:of\s+(?:the\s+)?)?(?:Information\s+Technology\s+Act(?:,\s*2000)?|IT\s+Act)", "Information Technology Act, 2000"),
-            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?)\s*(?:of\s+(?:the\s+)?)?(?:Arms\s+Act(?:,\s*1959)?)", "Arms Act, 1959"),
+            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?(?:\([a-z0-9]+\))?)\s*(?:of\s+(?:the\s+)?)?(?:Indian\s+Penal\s+Code(?:,\s*1860)?|IPC)", "Indian Penal Code, 1860"),
+            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?(?:\([a-z0-9]+\))?)\s*(?:of\s+(?:the\s+)?)?(?:Bharatiya\s+Nyaya\s+Sanhita(?:,\s*2023)?|BNS)", "Bharatiya Nyaya Sanhita, 2023"),
+            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?(?:\([a-z0-9]+\))?)\s*(?:of\s+(?:the\s+)?)?(?:Information\s+Technology\s+Act(?:,\s*2000)?|IT\s+Act)", "Information Technology Act, 2000"),
+            (r"(?:Section|Sec\.?|S\.)\s*(\d+[A-Za-z]?(?:\([a-z0-9]+\))?)\s*(?:of\s+(?:the\s+)?)?(?:Arms\s+Act(?:,\s*1959)?)", "Arms Act, 1959"),
         ]
         seen_charges: set[tuple[str, str]] = set()
         for pattern, statute_name in explicit_patterns:
             for match in re.finditer(pattern, text, re.IGNORECASE):
                 sec_val = f"Section {match.group(1)}"
+                key = (statute_name.casefold(), sec_val.casefold())
+                if key not in seen_charges:
+                    seen_charges.add(key)
+                    charges.append({
+                        "section": sec_val,
+                        "statute": statute_name,
+                        "description": f"Alleged offence under {sec_val} of {statute_name}",
+                        "accused_name": "Accused",
+                        "elements_alleged": [f"Commission of acts proscribed under {sec_val} ({statute_name})"],
+                        "record_status": "current",
+                    })
+
+        # Also extract plural 'Sections 318(2), 319(2) and 61(2) of BNS / IPC'
+        for nums_raw, act_raw in re.findall(
+            r"\bSections\s+([0-9][0-9A-Za-z\(\)\s,&/]+?)\s+(?:of\s+)?(?:the\s+)?(Bharatiya\s+Nyaya\s+Sanhita(?:,\s*2023)?|BNS|Indian\s+Penal\s+Code(?:,\s*1860)?|IPC|I\.?T\.?\s*Act)",
+            text,
+            re.IGNORECASE,
+        ):
+            act_u = act_raw.upper()
+            statute_name = (
+                "Bharatiya Nyaya Sanhita, 2023" if ("BNS" in act_u or "BHARATIYA NYAYA" in act_u)
+                else ("Information Technology Act, 2000" if "IT" in act_u or "I.T." in act_u else "Indian Penal Code, 1860")
+            )
+            cleaned_nums = re.sub(r"\s*\(\s*", "(", re.sub(r"\s*\)\s*", ")", nums_raw))
+            for sec_num in re.findall(r"(?<![A-Za-z0-9])([0-9]{1,4}(?:\([a-z0-9]+\))*[A-Za-z]?)(?![A-Za-z0-9])", cleaned_nums):
+                if sec_num in {"1860", "2000", "2023"}:
+                    continue
+                sec_val = f"Section {sec_num}"
                 key = (statute_name.casefold(), sec_val.casefold())
                 if key not in seen_charges:
                     seen_charges.add(key)

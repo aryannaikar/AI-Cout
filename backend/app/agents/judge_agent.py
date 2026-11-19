@@ -127,18 +127,27 @@ class JudgeAgent:
         charge_blob = " ".join(f"{c.statute} {c.section} {c.description}" for c in (case.charges or [])).lower()
         regime = detect_case_legal_regime(case)
         is_stolen_prop = any(tok in charge_blob for tok in ("411", "379", "317", "303", "stolen", "theft"))
+        is_receiving_stolen = any(tok in charge_blob for tok in ("411", "317"))
         if is_stolen_prop and regime.get("is_historical"):
+            if is_receiving_stolen:
+                companion_provisions.append("Section 379 IPC")
             companion_provisions.extend([
-                "Section 379 IPC",
                 "Section 102 of the Indian Evidence Act",
                 "Section 114 of the Indian Evidence Act",
             ])
         elif is_stolen_prop:
+            if is_receiving_stolen:
+                companion_provisions.append("Section 303 BNS")
             companion_provisions.extend([
-                "Section 303 BNS",
                 "Section 105 of the Bharatiya Sakshya Adhiniyam",
                 "Section 119 of the Bharatiya Sakshya Adhiniyam",
             ])
+
+        if regime.get("is_historical"):
+            if any(tok in charge_blob for tok in ("447", "448", "trespass")):
+                companion_provisions.append("Section 441 IPC")
+            if any(tok in charge_blob for tok in ("427", "mischief")):
+                companion_provisions.append("Section 425 IPC")
 
         if any(tok in charge_blob for tok in ("arms", "25", "27")) and "arms" in charge_blob:
             companion_provisions.extend([
@@ -797,6 +806,15 @@ class JudgeAgent:
                 "For Arms Act / public-place recovery trials: evaluate (1) whether independent public witnesses were joined during recovery/seizure under Section 100(4) CrPC (or Section 103 BNSS); "
                 "(2) whether the recovered firearm/ammunition was properly sealed, deposited in the Malkhana with unbroken chain of custody, and examined by an armourer/FSL for live operability; "
                 "(3) whether valid previous sanction under Section 39 Arms Act is proved on record; and (4) under Section 27 Indian Evidence Act (or Section 23 BSA), only the exact information leading distinctly to discovery of a physical fact is admissible, never self-incriminating confession to police under Section 25 IEA. "
+            )
+        if getattr(case, "proceeding_type", None) == "bail" or "bail" in f"{case.case_title} {case.allegations_summary}".lower():
+            doctrinal_guidance += (
+                "For BAIL / ANTICIPATORY BAIL proceedings: evaluate prima facie link, recovery, and criminal antecedents. "
+                "If the record establishes multiple prior similar criminal antecedents or previous conviction(s) (habitual offender) alongside prima facie involvement, "
+                "deny bail (set final_decision='CONVICTION' / 'BAIL REJECTED'). "
+                "In bail / anticipatory bail petitions, adjudicate ONLY the petitioner's (decision_subject's) entitlement to bail; "
+                "never return PARTIAL CONVICTION based on recoveries from other non-petitioner co-accused. "
+                "If nothing was recovered from the petitioner's exclusive possession and there is no independent corroboration (or the petitioner undertakes to cooperate), grant bail (set final_decision='ACQUITTAL' / 'BAIL GRANTED'). "
             )
         if getattr(evidence_report, "theft_recovery_chain_audit", None) or getattr(evidence_report, "ml_detected_defects", None):
             doctrinal_guidance += (

@@ -21,8 +21,11 @@ def _coerce_none_fields(
         if k in updated and updated[k] is None:
             updated[k] = ""
     for k in list_fields:
-        if k in updated and updated[k] is None:
-            updated[k] = []
+        if k in updated:
+            if updated[k] is None:
+                updated[k] = []
+            elif isinstance(updated[k], str):
+                updated[k] = [updated[k]] if updated[k].strip() else []
     return updated
 
 

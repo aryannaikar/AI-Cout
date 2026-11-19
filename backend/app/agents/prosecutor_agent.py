@@ -18,6 +18,7 @@ from app.models.judgment_models import (
     StatementType,
 )
 from app.models.legal_models import LegalResearchResult, WebResearchResult
+from app.services.legal_transition import detect_case_legal_regime
 from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -137,15 +138,29 @@ class ProsecutorAgent:
                 )
             )
 
-        # INFERENCE
+        # INFERENCE (regime-faithful and grounded in whether recovery actually occurred)
+        is_historical = bool(detect_case_legal_regime(case).get("is_historical"))
+        presumption_ref = (
+            "Evidentiary presumption under Section 114, Indian Evidence Act, 1872"
+            if is_historical
+            else "Evidentiary presumption under Section 119 BSA"
+        )
+        facts_list = getattr(case, "prosecution_facts", None) or getattr(case, "facts", None) or []
+        case_blob = " ".join(str(f) for f in facts_list).lower() + " " + (case.allegations_summary or "").lower()
+        has_recovery = bool(
+            "recovered from" in case_blob or "seized from" in case_blob or "recovery memo" in case_blob
+        ) and "no stolen property" not in case_blob and "nothing was recovered" not in case_blob
         components.append(
             ArgumentComponent(
                 statement_type=StatementType.INFERENCE,
                 content=(
                     "Given that the stolen property was recovered directly and immediately from the accused, "
                     "the Court must infer that the accused knowingly held the property with dishonest intent, as presumed under the law."
+                    if has_recovery
+                    else "Taking the prosecution narrative and surrounding circumstances together, the Court should infer "
+                    "culpable intention and involvement on the part of the accused as charged."
                 ),
-                source_reference="Evidentiary presumption under BSA / Section 119",
+                source_reference=presumption_ref,
             )
         )
 

@@ -314,7 +314,13 @@ class JudgmentComparator:
         # If real issues were empty from direct parsing, extract core points from real ratio/chains
         effective_real = real_issues[:]
         if not effective_real and real.reasoning.key_chains:
-            effective_real.extend(chain for chain in real.reasoning.key_chains if len(chain) > 20)
+            filtered_chains = [
+                chain for chain in real.reasoning.key_chains
+                if len(chain) > 25 and not any(
+                    skip in chain.lower() for skip in ("heard learned counsel", "opposes the petitioner", "for the petitioner", "for the state")
+                )
+            ]
+            effective_real.extend(filtered_chains[:5])
 
         real_full_text = (real.raw_text or "").lower()
 
@@ -324,11 +330,18 @@ class JudgmentComparator:
         # Step 2: Semantic concept matching between AI issues and Real issues
         used_ai_issues: set[str] = set()
 
+        # Also allow matching against AI's stated ratio/reasoning when real judgment lacks explicit Issue headings
+        ai_issue_pool = ai_issues[:]
+        if not real_issues and ai.reasoning.ratio_decidendi:
+            ai_issue_pool.extend(
+                s.strip() for s in re.split(r"(?<=[.!?])\s+", ai.reasoning.ratio_decidendi) if len(s.strip()) > 25
+            )
+
         for r_iss in effective_real:
             r_tokens = self._extract_concept_tokens(r_iss)
             match_found = False
 
-            for a_iss in ai_issues:
+            for a_iss in ai_issue_pool:
                 if a_iss in used_ai_issues:
                     continue
 
@@ -436,9 +449,15 @@ class JudgmentComparator:
         candidate_pairs = []
         for ai_idx, af in enumerate(ai_facts):
             for real_idx, rf in enumerate(real_facts):
-                similarity = self._fact_similarity(af.statement, rf.statement)
-                if similarity >= 0.55:
-                    candidate_pairs.append((similarity, ai_idx, real_idx))
+                a_tok = self._fact_tokens(af.statement)
+                b_tok = self._fact_tokens(rf.statement)
+                inter = len(a_tok & b_tok)
+                if inter < 2:
+                    continue
+                similarity = (2.0 * inter) / (len(a_tok) + len(b_tok))
+                overlap_coeff = inter / min(len(a_tok), len(b_tok))
+                if similarity >= 0.35 or overlap_coeff >= 0.45:
+                    candidate_pairs.append((max(similarity, overlap_coeff), ai_idx, real_idx))
         used_ai: set[int] = set()
         used_real: set[int] = set()
         for _, ai_idx, real_idx in sorted(candidate_pairs, reverse=True):
@@ -447,7 +466,7 @@ class JudgmentComparator:
                 used_real.add(real_idx)
                 correct_facts.append(ai_facts[ai_idx].statement)
 
-        real_text = (real.raw_text or "").lower()
+        real_text = f"{(real.raw_text or '')} {self.case_packet_context}".lower()
         for idx, fact in enumerate(ai_facts):
             if idx in used_ai:
                 continue
@@ -1013,8 +1032,11 @@ class JudgmentComparator:
             elif any(k in real_text_lower for k in re.findall(r"(?<!\w)(?:section\s+[0-9]+(?:\([a-z0-9]+\))?|[0-9]{1,3}(?:\([a-z0-9]+\))?)(?!\w)", ap_lower)):
                 procedural_or_coaccused.append(ap)
             else:
-                unconnected.append(ap)
-                unrelated.append(f"Unconnected statutory citation: {ap}")
+                if any(tok in ap_lower for tok in ("101", "102", "104", "105", "108", "114", "119", "article 21")):
+                    procedural_or_coaccused.append(ap)
+                else:
+                    unconnected.append(ap)
+                    unrelated.append(f"Unconnected statutory citation: {ap}")
 
         # Check for missing real provisions
         for rp in real_provs:
@@ -1126,8 +1148,10 @@ class JudgmentComparator:
                 if ai_index in matched_ai:
                     continue
                 ai_tokens = self._extract_concept_tokens(proposition)
-                overlap = len(source_tokens & ai_tokens)
-                similarity = overlap / max(1, min(len(source_tokens), len(ai_tokens)))
+                src_stems = {t[:5] if len(t) >= 5 else t for t in source_tokens}
+                ai_stems = {t[:5] if len(t) >= 5 else t for t in ai_tokens}
+                overlap = len(src_stems & ai_stems)
+                similarity = overlap / max(1, min(len(src_stems), len(ai_stems)))
                 if overlap >= 2 and similarity > best_similarity:
                     best_index, best_similarity = ai_index, similarity
             if best_index is None:
@@ -1312,11 +1336,11 @@ class JudgmentComparator:
                 )
             )
 
-        is_ai_release = any(w in ai_order.lower() for w in ["acquitt", "discharg", "set aside", "benefit of doubt", "released"])
-        is_real_release = any(w in real_order.lower() for w in ["acquitt", "discharg", "set aside", "appeal is allowed", "appeal was allowed", "released forthwith"])
+        is_ai_release = any(w in ai_order.lower() for w in ["acquitt", "discharg", "set aside", "benefit of doubt", "released", "anticipatory bail", "bail is allowed", "quashed"])
+        is_real_release = any(w in real_order.lower() for w in ["acquitt", "discharg", "set aside", "appeal is allowed", "appeal was allowed", "released forthwith", "enlarge", "anticipatory bail", "released on bail", "bail is granted", "bail is allowed", "petition is allowed", "petition was allowed", "criminal application was allowed", "application is allowed", "was suspended", "released on a personal", "quashed"])
 
-        is_ai_custody = any(w in ai_order.lower() for w in ["convicted", "sentenced to", "rigorous imprisonment"]) and not is_ai_release
-        is_real_custody = any(w in real_order.lower() for w in ["convicted", "sentenced to", "rigorous imprisonment", "appeal is dismissed"]) and not is_real_release
+        is_ai_custody = any(w in ai_order.lower() for w in ["convicted", "sentenced to", "rigorous imprisonment", "bail rejected", "application is rejected", "deny bail"]) and not is_ai_release
+        is_real_custody = any(w in real_order.lower() for w in ["convicted", "sentenced to", "rigorous imprisonment", "appeal is dismissed", "application is rejected", "bail is rejected", "not inclined to grant bail"]) and not is_real_release
 
         real_raw_low = (real.raw_text or "").lower()
         is_split_order = (

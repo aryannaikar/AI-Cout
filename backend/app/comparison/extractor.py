@@ -486,18 +486,30 @@ class JudgmentNormalizer:
                 f"Normalized to PARTIAL_CONVICTION: Appellate outcome modified to partial conviction ('{raw_trimmed[:120]}').",
             )
 
-        # 3. APPEAL ALLOWED (When not overturning conviction/acquittal)
-        if "APPEAL IS ALLOWED" in t or "APPEAL ALLOWED" in t or t == "ALLOWED":
+        # 3. APPEAL / PETITION / APPLICATION / BAIL ALLOWED (When not overturning conviction/acquittal)
+        is_bail_or_petition_allowed = bool(
+            re.search(
+                r"\b(?:ENLARGE[D]?\s+(?:THE\s+)?(?:PETITIONER|ACCUSED|APPLICANT)\s+ON\s+(?:ANTICIPATORY\s+)?BAIL|RELEASED\s+ON\s+(?:ANTICIPATORY\s+)?BAIL|(?:ANTICIPATORY\s+)?BAIL\s+(?:APPLICATION\s+)?(?:IS\s+|STANDS\s+)?(?:GRANTED|ALLOWED)|(?:CRIMINAL\s+)?(?:PETITION|APPLICATION)\s+(?:IS\s+|WAS\s+|STANDS\s+)?ALLOWED|SENTENCE\b[^\n.]*\b(?:WAS|IS)\s+SUSPENDED)\b",
+                t,
+            )
+        )
+        if "APPEAL IS ALLOWED" in t or "APPEAL ALLOWED" in t or t == "ALLOWED" or is_bail_or_petition_allowed:
             return (
                 OperativeVerdict.APPEAL_ALLOWED,
-                f"Normalized to APPEAL_ALLOWED: Appellate court allowed the appeal ('{raw_trimmed[:120]}').",
+                f"Normalized to APPEAL_ALLOWED: Court allowed the petition / granted bail ('{raw_trimmed[:120]}').",
             )
 
-        # 4. APPEAL DISMISSED
-        if "APPEAL IS DISMISSED" in t or "APPEAL DISMISSED" in t or "DISMISSED" in t:
+        # 4. APPEAL / APPLICATION DISMISSED OR BAIL REJECTED
+        is_bail_rejected = bool(
+            re.search(
+                r"\b(?:(?:BAIL\s+)?APPLICATION\s+(?:IS\s+|STANDS\s+)?(?:REJECTED|DISMISSED)|NOT\s+INCLINED\s+TO\s+GRANT\s+(?:ANTICIPATORY\s+)?BAIL)\b",
+                t,
+            )
+        )
+        if "APPEAL IS DISMISSED" in t or "APPEAL DISMISSED" in t or "DISMISSED" in t or is_bail_rejected:
             return (
                 OperativeVerdict.APPEAL_DISMISSED,
-                f"Normalized to APPEAL_DISMISSED: Appellate court upheld lower ruling and dismissed appeal ('{raw_trimmed[:120]}').",
+                f"Normalized to APPEAL_DISMISSED: Court dismissed/rejected the appeal or bail application ('{raw_trimmed[:120]}').",
             )
 
         # 5. CONVICTION
@@ -649,9 +661,26 @@ class JudgmentNormalizer:
             "confidential evaluation file",
             "source: supplied supreme court judgment",
             "case benchmark:",
+            "source limitations for evaluation",
+            "isolation and evaluation workflow",
+            "if an ai output does not contain enough information",
+            "do not silently supplement",
+            "do not calculate an overall percentage",
+            "preserve the original ai output",
+            "run the live ai court using only",
+            "persist the ai judgment and its structured",
+            "only after persistence, load this ground truth",
+            "compare the ai output against each evaluation dimension",
+            "relevant reasoning and final order appear on pages",
         ]):
             return True
-        if re.search(r"^page\s+\d+", text_block.strip(), re.IGNORECASE):
+        if re.search(
+            r"^(?:page\s+\d+|coram\s*:|for the (?:petitioner|state|appellant|respondent)\s*:|order\s+no\.|dated\s*:|in the (?:high|supreme) court\b|versus\b|\.\.\.)",
+            text_block.strip(),
+            re.IGNORECASE,
+        ):
+            return True
+        if re.search(r"(?:\.{2,}|·\.\.)\s*(?:petitioner|opposite party|appellant|respondent)\s*$", text_block.strip(), re.IGNORECASE):
             return True
         return False
 
@@ -704,7 +733,7 @@ class JudgmentNormalizer:
             for p in reversed(paras):
                 if cls._is_footer_or_metadata(p):
                     continue
-                if any(w in p.lower() for w in ["acquitt", "allowed", "set aside", "dismissed", "convict", "discharged", "bail bonds", "benefit of doubt"]):
+                if any(w in p.lower() for w in ["acquitt", "allowed", "set aside", "dismissed", "rejected", "convict", "discharged", "bail bonds", "benefit of doubt", "anticipatory bail", "released on bail", "enlarge", "not inclined to grant bail"]):
                     final_order = p
                     break
 
@@ -809,6 +838,52 @@ class JudgmentNormalizer:
                         )
                     )
 
+        # Also extract compound mentions like 'Sections 331(4), 305 & 62 of the BNS'
+        for nums, statute in re.findall(
+            r"Sections?\s+([0-9][0-9A-Za-z\(\)\s,&/]+?)\s*(?:of\s+)?(?:the\s+)?(IPC|Indian Penal Code|BNS|Bharatiya Nyaya Sanhita|BNSS|Bharatiya Nagarik Suraksha Sanhita|CrPC|Arms Act)(?:\s*,\s*\d{4})?",
+            text,
+            re.IGNORECASE,
+        ):
+            stat_u = statute.upper()
+            stat_norm = "BNS" if ("BHARATIYA NYAYA" in stat_u or stat_u == "BNS") else ("BNSS" if ("NAGARIK SURAKSHA" in stat_u or stat_u == "BNSS") else stat_u)
+            for sec in re.findall(r"(?<![A-Za-z0-9])([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)(?![A-Za-z0-9])", nums):
+                if sec == "2023" or sec == "1860":
+                    continue
+                # Do not add CrPC/BNSS 438/482 procedural bail/quashing sections as substantive penal charges
+                if stat_norm in {"BNSS", "CRPC"} and (sec.startswith("482") or sec.startswith("438")):
+                    continue
+                key = f"{stat_norm} Section {sec}"
+                if key not in seen:
+                    seen.add(key)
+                    charges.append(
+                        NormalizedCharge(
+                            statute=key,
+                            era=cls._classify_statute_era(key),
+                            offence=key,
+                        )
+                    )
+
+        # Also extract 'IPC Sections 353 and 379' (Act before plural Sections)
+        for statute, nums in re.findall(
+            r"\b(IPC|BNS|BNSS|CrPC|Arms Act)\s+Sections?\s+([0-9][0-9A-Za-z\(\)\s,&/]+?)(?=\.|,|\n|$|\s+The\b|\s+of\b)",
+            text,
+            re.IGNORECASE,
+        ):
+            stat_u = statute.upper()
+            for sec in re.findall(r"(?<![A-Za-z0-9])([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)(?![A-Za-z0-9])", nums):
+                if sec in {"1860", "1973", "2023"}:
+                    continue
+                key = f"{stat_u} Section {sec}"
+                if key not in seen:
+                    seen.add(key)
+                    charges.append(
+                        NormalizedCharge(
+                            statute=key,
+                            era=cls._classify_statute_era(key),
+                            offence=key,
+                        )
+                    )
+
         # Standard patterns matching Indian statutory penal sections
         patterns = [
             r"(?:Section|Sec\.|u/s|U/S)\s+([0-9]+(?:\([a-z0-9]+\)|[A-Za-z])?(?:\s+(?:read with|r/w)\s+[0-9A-Za-z\(\)]+)?)\s+(?:of\s+)?(?:the\s+)?(IPC|Indian Penal Code|BNS|Bharatiya Nyaya Sanhita|Arms Act|NDPS Act|IT Act|Railway Property \(Unlawful Possession\) Act(?:,\s*1966)?|R\.P\.\(U\.P\.\)\s*Act)",
@@ -824,6 +899,8 @@ class JudgmentNormalizer:
                     else:
                         statute, sec = groups[0], groups[1]
                     statute_norm = "Railway Property (Unlawful Possession) Act, 1966" if ("RAILWAY PROPERTY" in statute.upper() or "R.P.(U.P.)" in statute.upper()) else statute.upper()
+                    if statute_norm in {"CRPC", "BNSS", "CODE OF CRIMINAL PROCEDURE", "BHARATIYA NAGARIK SURAKSHA SANHITA"} and (sec.startswith("438") or sec.startswith("482")):
+                        continue
                     key = f"{statute_norm} Section {sec}"
                     if key not in seen:
                         seen.add(key)
@@ -886,19 +963,20 @@ class JudgmentNormalizer:
                     seen.add(clean)
                     issues.append(NormalizedIssue(issue_id=f"Issue-{idx}", statement=clean))
 
-        # 2. Look for 'Points for determination' or 'SECTION 2: POINTS FOR DETERMINATION'
+        # 2. Look for 'Points for determination', 'Question before the High Court', or 'SECTION 2: POINTS FOR DETERMINATION'
         if not issues:
             m_pts = re.search(
-                r"(?:SECTION 2: POINTS FOR DETERMINATION|POINTS FOR DETERMINATION|ISSUES FOR DETERMINATION|ISSUES:)(.*?)(?=(?:SECTION|\n\s*[0-9]\.|\n\n[A-Z\s]{4,}|\Z))",
+                r"(?:SECTION 2: POINTS FOR DETERMINATION|POINTS FOR DETERMINATION|ISSUES FOR DETERMINATION|ISSUES:|Question before the (?:High|Supreme) Court)(.*?)(?=(?:\n\s*SECTION\s+\d|\n\s*[0-9]\.|\n(?:Submissions considered|Court[’']s stated basis|Final decision)|$))",
                 text,
                 re.DOTALL | re.IGNORECASE,
             )
             if m_pts:
                 block = m_pts.group(1)
-                items = re.findall(r"(?:^|\n)\s*(?:[0-9]+\.|\([0-9a-z]+\)|Issue\s*#?[0-9]+:?)\s*([^\n]+(?:\n[^\n0-9•\u2022\-\*]+)?)", block)
+                norm_block = re.sub(r"(?<!\n)\n(?!\s*(?:[0-9]+\.|[•\u2022\-*]|\n))", " ", block)
+                items = re.findall(r"(?:^|\n)\s*(?:[0-9]+\.|\([0-9a-z]+\)|[•\u2022\-*]|Issue\s*#?[0-9]+:?)\s*([^\n]+)", norm_block)
                 for idx, item in enumerate(items, start=1):
                     clean = " ".join(item.split()).strip()
-                    if len(clean) > 15 and clean not in seen:
+                    if len(clean) > 15 and clean not in seen and not cls._is_footer_or_metadata(clean):
                         seen.add(clean)
                         issues.append(NormalizedIssue(issue_id=f"Issue-{idx}", statement=clean))
 
@@ -994,9 +1072,11 @@ class JudgmentNormalizer:
         )
         for m in pattern.finditer(text):
             ex_num = m.group(1).strip()
+            if not re.search(r"\d", ex_num):
+                continue
             ex_id = f"Exhibit {ex_num}"
-            desc = m.group(2).strip()
-            if not desc:
+            desc = m.group(2).strip(" ,;:-")
+            if len(desc) < 4:
                 continue
             key = f"{ex_id}:{desc[:30]}"
             if key not in seen:
@@ -1051,7 +1131,28 @@ class JudgmentNormalizer:
             "presumption under section 114", "reasoning targets:",
             "source case:", "strict isolation:", "phase 5 must evaluate", "single case-level verdict",
             "isolation and evaluation workflow", "important source limitations",
+            "real court judgment", "heard learned counsel", "opposes the petitioner",
+            "coram:", "opposite party", "for the petitioner", "for the state", "advocate", "a.p.p",
+            "ground-truth case identification", "neutral citation:", "order pronounced:",
+            "police case:", "underlying conviction:", "question before the high court",
+            "final decision / operative order", "phase 5 evaluation metrics",
+            "correct interpretation for comparison",
+            "furnishing bail bond", "sureties of the like amount", "personal recognizance bond",
+            "two consecutive defaults", "to the satisfaction of", "cancellation of bail",
+            "subject to the conditions", "enlarge the petitioner", "inclined to grant",
+            "privilege of anticipatory bail", "surrender before the", "arrest/surrender within",
+            "bailor was to be", "desist from committing", "not to induce, promise",
+            "remain present before the trial", "satish/-", "order dated:",
+            "criminal application was allowed", "the order imposed conditions",
+            "if arrested or if he surrendered", "he was directed not to",
+            "the substantive sentence imposed", "the evidentiary record consists of",
+            "no other prosecution or defence witnesses", "absence of any deposed witness",
         ]):
+            return True
+        if re.search(r"^(?:court|proceeding|applicant|respondent|petitioner|judge)\s*:", t_lower):
+            return True
+        if re.search(r"^\d[\d,]*\s+(?:of\s+\d{4}|with\s+two\s+(?:solvent\s+)?sureties)", t_lower):
+            return True
             return True
         return False
 
@@ -1065,18 +1166,19 @@ class JudgmentNormalizer:
             re.DOTALL | re.IGNORECASE,
         )
         # If document is a structured summary with 1. Operative Verdict / 1. Ground-truth identity, etc. and no facts section, do not grab headers
-        if not m and re.search(r"(?:1\.\s*(?:Operative Verdict|Ground-truth identity)|Ground Truth\s*[\-–]|Case benchmark:)", text, re.IGNORECASE):
+        if not m and re.search(r"(?:1\.\s*(?:Operative Verdict|Ground-truth identity)|Ground-truth case identification|AI COURT GROUND TRUTH|Ground Truth\s*[\-–]|Case benchmark:)", text, re.IGNORECASE):
             source_text = ""
         else:
             source_text = m.group(1) if m else text[:2500]
 
         if source_text:
             seen_stmts: set[str] = set()
-            # Handle both bullet points and individual sentences inside multi-sentence paragraphs
-            raw_chunks = [line.strip(" \t•\u2022-*") for line in source_text.split("\n") if line.strip()]
+            # Rejoin soft line-wraps within paragraphs before sentence splitting
+            normalized_source = re.sub(r"(?<!\n)\n(?!\s*(?:[0-9]+\.|[•\u2022\-*]|\n))", " ", source_text)
+            raw_chunks = [line.strip(" \t•\u2022-*") for line in normalized_source.split("\n") if line.strip()]
             candidates: list[str] = []
             for chunk in raw_chunks:
-                parts = re.split(r"(?<=[.!?])\s+", chunk)
+                parts = re.split(r"(?<!\bNo)(?<!\bRs)(?<!\bMr)(?<!\bMs)(?<!\bDr)(?<!\bEx)(?<!\bP\.S)(?<!\bO\.S)(?<!\bC\.C)(?<!\bA\.B\.A)(?<=[.!?])\s+", chunk)
                 if len(parts) > 1:
                     candidates.extend(p.strip(" \t•\u2022-*") for p in parts if p.strip())
                 else:
@@ -1105,11 +1207,19 @@ class JudgmentNormalizer:
     def _classify_epistemic_statement(cls, stmt: str) -> EpistemicType:
         """Classify a legal proposition into FACT, EVIDENCE, CLAIM, INFERENCE, or LEGAL_CONCLUSION."""
         s = stmt.lower().strip()
-        if any(term in s for term in ["held", "guilty", "acquitted", "consequently", "entitled to benefit", "liable to be dismissed", "judgment under challenge"]):
+        if any(term in s for term in [
+            "held", "guilty", "acquitted", "consequently", "entitled to benefit", "liable to be dismissed", "judgment under challenge",
+            "the court considered", "the court noted", "the court also considered", "the court took", "the court was not",
+            "on that basis", "on these circumstances", "the court granted", "suspension of sentence",
+        ]):
             return EpistemicType.LEGAL_CONCLUSION
         if any(term in s for term in ["infers", "indicates", "suggests", "demonstrates that", "implies", "leads to the conclusion"]):
             return EpistemicType.INFERENCE
-        if s.startswith(("the prosecution submits", "the prosecution contends", "the prosecution argues", "the defense submits", "the defence submits", "the defense argues", "the defence argues", "the prosecution alleged", "prosecution case is")):
+        if s.startswith((
+            "the prosecution submits", "the prosecution contends", "the prosecution argues",
+            "the defense submits", "the defence submits", "the defense argues", "the defence argues",
+            "the prosecution alleged", "prosecution case is", "learned counsel", "applicant:", "state:",
+        )):
             return EpistemicType.CLAIM
         if any(term in s for term in ["pw-", "ex.", "ext.-", "exhibit", "deposed", "testified", "memo", "fsl report", "recovered vide", "material object"]):
             return EpistemicType.EVIDENCE
@@ -1125,27 +1235,53 @@ class JudgmentNormalizer:
             re.IGNORECASE,
         )
         for m in matches:
-            provisions.add(m.strip().replace("\n", " "))
+            provisions.add(re.sub(r"\s+", " ", m.strip()))
 
-        # Also extract mentions like 'Sections 102 and 114, Indian Evidence Act, 1872'
+        # Also extract mentions like 'Sections 102 and 114, Indian Evidence Act, 1872' or 'Sections 331(4), 305 & 62 of BNSS'
         m_compound = re.findall(
-            r"Sections?\s+([0-9\sand,]+)\s*(?:of\s+)?(?:the\s+)?(IPC|Indian Penal Code|Indian Evidence Act|Evidence Act|BNS|BSA)",
+            r"Sections?\s+([0-9][0-9A-Za-z\(\)\s,&]+?)\s*(?:of\s+)?(?:the\s+)?(IPC|Indian Penal Code|Indian Evidence Act|Evidence Act|BNS|Bharatiya Nyaya Sanhita|BSA|Bharatiya Sakshya Adhiniyam|BNSS|Bharatiya Nagarik Suraksha Sanhita|CrPC)",
             text,
             re.IGNORECASE,
         )
         for nums, statute in m_compound:
-            for n in re.findall(r"(?<!\w)([0-9]{1,4}(?:\([a-z0-9]+\))?)(?!\w)", nums):
+            for n in re.findall(r"(?<!\w)([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)(?!\w)", nums):
+                if n in {"1860", "1872", "1973", "2023"}:
+                    continue
                 provisions.add(f"Section {n} {statute.upper()}")
 
+        # Also extract 'IPC Sections 353 and 379' (Act before plural Sections)
+        for statute, nums in re.findall(
+            r"\b(IPC|BNS|BNSS|CrPC|IEA|BSA|Arms Act)\s+Sections?\s+([0-9][0-9A-Za-z\(\)\s,&/]+?)(?=\.|,|\n|$|\s+The\b|\s+of\b)",
+            text,
+            re.IGNORECASE,
+        ):
+            for n in re.findall(r"(?<![A-Za-z0-9])([0-9]{1,4}(?:\([a-z0-9]+\)|[A-Za-z])?)(?![A-Za-z0-9])", nums):
+                if n in {"1860", "1872", "1973", "2023"}:
+                    continue
+                if statute.upper() in {"CRPC", "BNSS"} and (n.startswith("438") or n.startswith("482")):
+                    continue
+                provisions.add(f"Section {n} {statute.upper()}")
+
+        # Exclude bail-bond procedural condition sub-sections (438(2) CrPC / 482(2) BNSS) from substantive provisions
+        provisions = {
+            p for p in provisions
+            if not re.search(r"(?<!\d)(?:438\(2\)|482\(2\))(?!\d)", p)
+        }
         return list(provisions)
 
     @classmethod
     def _extract_chains_of_reasoning(cls, reasons_text: str) -> List[str]:
         """Extract logical inference steps and distinct proposition chains."""
+        # Rejoin soft line-wraps within paragraphs before splitting into reasoning chains
+        normalized_reasons = re.sub(r"(?<!\n)\n(?!\s*(?:[0-9]+\.|[•\u2022\-*]|\n))", " ", reasons_text)
         chains: List[str] = []
-        for line in reasons_text.split("\n"):
+        for line in normalized_reasons.split("\n"):
             clean = line.strip(" \t•\u2022-*")
-            if len(clean) > 25 and not cls._is_footer_or_metadata(clean):
+            if (
+                len(clean) > 25
+                and not cls._is_footer_or_metadata(clean)
+                and not re.match(r"^(?:\d+\.\s*)?(?:heard learned|learned a\.p\.p opposes|for the (?:petitioner|state)|coram\s*:|order\s+no\.)", clean, re.IGNORECASE)
+            ):
                 chains.append(clean)
 
         if not chains:
@@ -1171,7 +1307,8 @@ class JudgmentNormalizer:
         if m_core:
             reasons_text = m_core.group(1).strip()
         else:
-            reasons_text = text[-2000:]
+            cleaned_tail = re.split(r"\n\s*(?:8\.\s*Phase 5|9\.\s*Source limitations|10\.\s*Isolation and evaluation|Correct interpretation for comparison)", text, maxsplit=1, flags=re.IGNORECASE)[0]
+            reasons_text = cleaned_tail[-2000:]
 
         chains = cls._extract_chains_of_reasoning(reasons_text)
 
